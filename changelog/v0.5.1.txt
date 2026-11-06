@@ -1,0 +1,134 @@
+[v0.5.1] - 2026-08-25
+基于v0.5.0，重新应用v0.4.0的bug修复 + 新增功能：
+
+Bug修复（重新应用v0.4.0修复）：
+1. GrabYeetHandler.java - shieldSwapCooldown 时间显示错误
+2. GrabYeetHandler.java - 自动释放 it.remove() 竞态
+3. PushHandler.java - pendingJumpPushTime 死代码移除
+4. KickHandler.java - releaseCharge() 冷却检查
+5. CarryingSlowdown.java - ADD_MULTIPLIED_TOTAL → ADD_VALUE
+6. SpinHandler.java - startRiding 返回值检查
+7. DapSession.java - null/removed 时 forceComplete
+8. InteractionRouter.java - 内存泄漏清理 + 死代码移除
+
+新增功能：
+9. DapUrHomiesMod.java - 新增 /daphow 帮助指令
+10. ClapLooper.java - 重写为2秒鼓掌音效（12拍节奏，snare鼓声）
+
+[v0.5.0] - 2026-08-25
+- 新增蓄力击掌模式(Charged Dap)
+- 新增完美击掌逻辑
+- 新增ClapLooper鼓掌音效系统
+
+[v0.4.6] - 2026-08-24
+- Bug修复和优化
+
+[v0.4.5] - 2026-08-24
+- Bug修复和优化
+
+[v0.4.4] - 2026-08-24
+- Bug修复和优化
+
+[v0.4.3] - 2026-08-24
+- Bug修复和优化
+
+[v0.4.2] - 2026-08-24
+- Bug修复和优化
+
+[v0.4.1] - 2026-08-24
+- Bug修复和优化
+
+[v0.4.0] - 2026-08-24
+- 验证通过的稳定版本
+- 基础互动功能完整
+
+[v0.5.2] - 2026-08-25
+基于v0.5.1，继续修复bug：
+
+Bug修复：
+1. SpinHandler.java - MAX_SPIN_TICKS 单位错误修复（30000 ticks→TickClock.msToTicks(30000)，从25分钟修正为30秒）
+2. GrabYeetHandler.java - tickCharge() 内联自动释放，避免ConcurrentModificationException（releaseCharge()在迭代时修改Map）
+3. GrabYeetHandler.java - 删除重复距离检查（第230-233行冗余检查）
+4. GrabYeetHandler.java - lastGrabTick字段移到字段声明区域（避免使用前未定义）
+5. KickHandler.java - ADD_MULTIPLIED_TOTAL → ADD_VALUE（与CarryingSlowdown保持一致）
+
+研究心得更新：
+- 原项目使用System.currentTimeMillis()，当前项目使用TickClock.now()（ticks），转换基本正确
+- 原项目有完整的PoseNetworking客户端同步系统，当前项目缺失（不影响服务端逻辑）
+- 原项目功能更丰富（QTE、DapHold、群体击掌等），当前项目为简化版
+- GrabYeetHandler是最复杂的组件，bug最多
+
+[v0.5.3] - 2026-08-25
+基于v0.5.2，继续修复bug：
+
+Bug修复：
+1. DapHandler.java - releaseCharge()普通分支未给target设置冷却（target可立即反击）
+2. DapHandler.java - startCharge()未检查target是否正在蓄力（状态冲突）
+3. DapHandler.java - handleNormalDap()未检查isCharging（与普通dap冲突）
+4. ClapLooper.java - rhythmIndex是tick()局部变量，移到Loop类中（每个Loop独立节奏）
+
+[v0.5.4] - 2026-08-25
+基于v0.5.3，继续修复bug：
+
+Bug修复：
+1. DapHandler.java - releaseCharge() bothPerfect判断未验证partner的蓄力目标是否是当前玩家（添加partnerIsChargingMe检查）
+2. DapHandler.java - cleanup()缺少chargeTarget.remove(playerId)（playerId作为蓄力者时泄漏）
+
+[v0.5.5] - 2026-08-25
+基于v0.5.4，继续修复bug：
+
+Bug修复：
+1. InteractionRouter.java - hug条件错误修复（!target.isSneaking() → target.isSneaking()，双方都需要蹲下）
+2. GrabYeetHandler.java - throwImmunity死代码修复（添加读取检查，被投掷后1秒内无法被再次抓取）
+3. DapSessionManager.java - 线程安全修复（HashMap→ConcurrentHashMap, HashSet→ConcurrentHashMap.newKeySet()）
+
+[v0.5.6] - 2026-08-25
+基于v0.5.5，继续修复bug：
+
+Bug修复：
+1. InteractionRouter.java - 右键事件缺少isHeld(sp)检查（被其他玩家抓起的玩家仍可右键互动其他玩家）
+2. InteractionRouter.java - 清理频率优化（lastRightClickTick从每事件清理改为每20 ticks清理一次，减少GC压力）
+
+研究分析：
+- Bug #37（releaseCharge目标验证）经分析非bug：蓄力系统只针对当前持有目标，与左键点击目标无关
+
+[v0.5.7] - 2026-08-25
+基于v0.5.6，继续修复bug：
+
+Bug修复：
+1. DapHandler.java - startCharge() Mode 1 死代码修复（循环充电检查移到通用 isCharging 检查之前）
+2. GrabYeetHandler.java - 超距离自动丢弃时 shield 模式清理顺序错误（disableShieldMode 在 holding 移除前调用）
+3. GrabYeetHandler.java - enableShieldMode/disableShieldMode 中 startRiding 返回值未检查（失败时优雅回退）
+4. InteractionRouter.java - 左键事件缺少 isHeld(sp) 和 isThrownFlying 检查（被其他玩家抓起/投掷的玩家不应能左键互动）
+
+研究分析：
+- 完成当前项目全部36个Java文件的代码审查
+- 完成原项目25+个文件的对比研究
+- 累计发现并修复28项bug
+
+[v0.5.8] - 2026-08-26
+基于v0.5.7，修复音效逻辑错误：
+
+Bug修复：
+1. DapHandler.java - executeDap() 错误使用 ClapLooper 播放2秒鼓掌循环（击掌/碰拳应只播放单次音效）
+2. DapHandler.java - executeHighFive() 错误使用 ClapLooper 播放2秒鼓掌循环（击掌已有 tier-based 音效系统）
+3. SimpleInteractions.java - onClap() 未使用 ClapLooper（/clap 命令应播放2秒节奏鼓掌，而非3次短音效）
+
+功能说明：
+- 马里奥跳 (/mariojump): 超级跳跃，前8 ticks强力上升(0.35速度)+接下来7 ticks弱上升(0.15速度)，
+  带END_ROD粒子轨迹和BIT音效，3秒冷却。效果类似马里奥游戏中的高跳。
+
+[v0.5.8-depfix] - 2026-08-26
+基于v0.5.8，修复依赖配置：
+
+依赖检查：
+1. fabric.mod.json - minecraft 版本范围从 ">=1.21" 收紧为 ">=1.21.1"（更准确的版本声明）
+2. build.gradle - 依赖配置正确，Polymer 5个子模块全部通过 include() 嵌入
+3. LuckPerms 联动 - 通过 Fabric Permissions API 反射调用，无硬依赖，容错良好
+4. Danse 联动 - 反射调用 de.tomalbrc.danse.GestureController，无硬依赖，容错良好
+5. 领地保护联动 - 支持 GriefPrevention/Lands/Flan，反射检测，配置开关控制
+6. ProtectionCompat 覆盖 - InteractionRouter 统一检查，所有 handler 均受保护
+7. Mixin 配置 - JAVA_21 兼容级别正确
+8. Access Widener - Entity vehicle/addPassenger/removePassenger 正确
+
+状态：所有依赖联动正常，无已知兼容性问题。
