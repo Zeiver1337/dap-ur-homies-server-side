@@ -3,7 +3,7 @@
   "id": "dap-ur-homies",
   "version": "${version}",
   "name": "Dap Ur Homies (Server-Side)",
-  "description": "Pure server-side player interaction mod. No client mod required! Optional Danse animation integration.",
+  "description": "Pure server-side player interaction mod. No client mod required! Optional Danse, LuckPerms and protection-plugin integration.",
   "authors": ["DAP Team"],
   "contact": {},
   "license": "MIT",
@@ -22,7 +22,9 @@
     "fabric-api": "*"
   },
   "suggests": {
-    "danse": "*"
+    "danse": "*",
+    "luckperms": "*",
+    "flan": "*"
   },
   "mixins": [
     "dap-ur-homies.mixins.json"
