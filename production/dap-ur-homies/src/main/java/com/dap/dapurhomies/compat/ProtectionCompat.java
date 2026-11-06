@@ -3,38 +3,35 @@ package com.dap.dapurhomies.compat;
 import com.dap.dapurhomies.DapUrHomiesMod;
 import com.dap.dapurhomies.config.ModConfig;
 import net.minecraft.server.network.ServerPlayerEntity;
+import net.minecraft.util.Identifier;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.world.World;
 
 import java.lang.reflect.Method;
 
 /**
- * Protection-mod compatibility layer.
- * Uses reflection to check common Fabric protection plugins (GriefPrevention, Lands, Flan)
- * without hard dependencies. Falls back to "allow" if no protection mod is detected.
+ * 领地保护软依赖。只有完整解析到对应 API 时才启用检查，解析失败则保持放行。
  */
 public class ProtectionCompat {
 
-    // === GriefPrevention (Fabric) ===
     private static final Class<?> GP_CLASS;
     private static final Method GP_GET_DATA_STORE;
     private static final Method GP_GET_CLAIM_AT;
     private static final Method GP_CLAIM_ALLOW_BUILD;
     private static Object gpInstance;
 
-    // === Lands ===
     private static final Class<?> LANDS_API_CLASS;
     private static final Method LANDS_GET_AREA_BP;
     private static final Method LANDS_GET_AREA_WBP;
     private static Object landsApi;
     private static boolean landsWarned = false;
 
-    // === Flan ===
     private static final Class<?> FLAN_API_CLASS;
     private static final Method FLAN_CAN_INTERACT;
+    private static final Object FLAN_BREAK_PERMISSION;
+    private static final Object FLAN_HURT_PLAYER_PERMISSION;
 
     static {
-        // --- GriefPrevention ---
         Class<?> gp = null;
         Method gpGetDs = null, gpGetClaim = null, gpAllowBuild = null;
         Object gpInst = null;
@@ -45,7 +42,6 @@ public class ProtectionCompat {
             Class<?> gpDs = Class.forName("me.ryanhamshire.GriefPrevention.DataStore");
             Class<?> gpClaim = Class.forName("me.ryanhamshire.GriefPrevention.Claim");
             gpGetClaim = gpDs.getMethod("getClaimAt", BlockPos.class, boolean.class, gpClaim);
-            // Check if initiator has build permission in the claim
             gpAllowBuild = gpClaim.getMethod("allowBuild", net.minecraft.entity.player.PlayerEntity.class);
         } catch (Throwable ignored) {}
         GP_CLASS = gp;
@@ -54,88 +50,72 @@ public class ProtectionCompat {
         GP_CLAIM_ALLOW_BUILD = gpAllowBuild;
         gpInstance = gpInst;
 
-        // --- Lands ---
         Class<?> lands = null;
         Method landsGetBp = null, landsGetWbp = null;
         Object landsApiObj = null;
         try {
             lands = Class.forName("me.angeschossen.lands.api.LandsIntegration");
             landsApiObj = lands.getMethod("of", String.class).invoke(null, "dap-ur-homies");
-            // Try both signatures: getArea(BlockPos) and getArea(World, BlockPos)
             try {
                 landsGetBp = lands.getMethod("getArea", BlockPos.class);
-            } catch (NoSuchMethodException e) {
-                landsGetBp = null;
-            }
+            } catch (NoSuchMethodException ignored) {}
             try {
                 landsGetWbp = lands.getMethod("getArea", World.class, BlockPos.class);
-            } catch (NoSuchMethodException e) {
-                landsGetWbp = null;
-            }
+            } catch (NoSuchMethodException ignored) {}
         } catch (Throwable ignored) {}
         LANDS_API_CLASS = lands;
         LANDS_GET_AREA_BP = landsGetBp;
         LANDS_GET_AREA_WBP = landsGetWbp;
         landsApi = landsApiObj;
 
-        // --- Flan ---
         Class<?> flan = null;
         Method flanCanInteract = null;
+        Object flanBreak = null, flanHurtPlayer = null;
         try {
-            flan = Class.forName("io.github.flemmli97.flan.api.permission.PermissionHelper");
-            flanCanInteract = flan.getMethod("checkPermission",
-                net.minecraft.server.network.ServerPlayerEntity.class,
-                BlockPos.class,
-                String.class); // "INTERACT_ENTITY" or similar
-        } catch (Exception ignored) {
-            // Try alternative Flan API class
-            try {
-                flan = Class.forName("io.github.flemmli97.flan.api.ClaimHandler");
-                flanCanInteract = flan.getMethod("canInteract",
-                    net.minecraft.server.network.ServerPlayerEntity.class,
-                    BlockPos.class);
-            } catch (Exception ignored2) {}
+            flan = Class.forName("io.github.flemmli97.flan.api.ClaimHandler");
+            flanCanInteract = flan.getMethod("canInteract", ServerPlayerEntity.class, BlockPos.class, Identifier.class);
+            Class<?> builtinPermission = Class.forName("io.github.flemmli97.flan.api.permission.BuiltinPermission");
+            flanBreak = builtinPermission.getField("BREAK").get(null);
+            flanHurtPlayer = builtinPermission.getField("HURTPLAYER").get(null);
+        } catch (Throwable ignored) {
+            flanCanInteract = null;
+            flanBreak = null;
+            flanHurtPlayer = null;
         }
         FLAN_API_CLASS = flan;
         FLAN_CAN_INTERACT = flanCanInteract;
+        FLAN_BREAK_PERMISSION = flanBreak;
+        FLAN_HURT_PLAYER_PERMISSION = flanHurtPlayer;
 
         if (isAnyProtectionLoaded()) {
             DapUrHomiesMod.LOGGER.info("[DapUrHomies] Protection compat loaded. Detected: " + getLoadedMods());
         }
     }
 
-    /**
-     * Check if the initiator can interact with the target at the target's location.
-     * Returns true if interaction is allowed (no protection blocking it).
-     *
-     * <p>Logic: checks whether the <b>initiator</b> has permission to build/interact
-     * at the target's position. This is more accurate than checking claim ownership.
-     */
+    /** 玩家之间的交互使用 Flan 的 hurt_player 权限。 */
     public static boolean canInteract(ServerPlayerEntity initiator, ServerPlayerEntity target) {
-        return canBuildAt(initiator, target.getBlockPos());
+        return check(initiator, target.getBlockPos(), FLAN_HURT_PLAYER_PERMISSION);
     }
 
-    /**
-     * Check whether {@code initiator} may modify/interact at {@code pos}.
-     * Returns true when no protection mod blocks it (or protection checks are disabled).
-     */
+    /** 撞墙破坏方块使用 Flan 的 break 权限。 */
     public static boolean canBuildAt(ServerPlayerEntity initiator, BlockPos pos) {
+        return check(initiator, pos, FLAN_BREAK_PERMISSION);
+    }
+
+    private static boolean check(ServerPlayerEntity initiator, BlockPos pos, Object flanPermission) {
         if (!ModConfig.get().protectionCheckEnabled) return true;
 
-        // === GriefPrevention: check if initiator can build in the claim ===
         if (gpInstance != null && GP_GET_DATA_STORE != null && GP_GET_CLAIM_AT != null && GP_CLAIM_ALLOW_BUILD != null) {
             try {
                 Object dataStore = GP_GET_DATA_STORE.invoke(gpInstance);
                 Object claim = GP_GET_CLAIM_AT.invoke(dataStore, pos, false, null);
                 if (claim != null) {
-                    // allowBuild returns null if allowed, or a String reason if denied
                     Object result = GP_CLAIM_ALLOW_BUILD.invoke(claim, initiator);
                     if (result != null) return false;
                 }
             } catch (Throwable ignored) {}
         }
 
-        // === Lands: check if target is in a protected area ===
         if (landsApi != null) {
             Object area = null;
             try {
@@ -147,28 +127,17 @@ public class ProtectionCompat {
             } catch (Throwable ignored) {}
 
             if (area != null && !landsWarned) {
-                // Lands area detected but we can't reliably check flags across versions.
-                // Log once so admins know it's a best-effort check.
                 DapUrHomiesMod.LOGGER.warn(
-                    "[DapUrHomies] Lands detected but detailed flag checking is not available. " +
-                    "Interactions inside Lands areas are allowed by default. " +
-                    "Consider disabling protectionCheckEnabled in config if this is unwanted."
+                    "[DapUrHomies] Lands detected but detailed flag checking is not available. "
+                    + "Interactions inside Lands areas are allowed by default."
                 );
                 landsWarned = true;
             }
         }
 
-        // === Flan: check interaction permission ===
-        if (FLAN_API_CLASS != null && FLAN_CAN_INTERACT != null) {
+        if (FLAN_CAN_INTERACT != null && flanPermission != null) {
             try {
-                Object result;
-                if (FLAN_CAN_INTERACT.getParameterCount() == 3) {
-                    // PermissionHelper.checkPermission(player, pos, permissionNode)
-                    result = FLAN_CAN_INTERACT.invoke(null, initiator, pos, "INTERACT_ENTITY");
-                } else {
-                    // ClaimHandler.canInteract(player, pos)
-                    result = FLAN_CAN_INTERACT.invoke(null, initiator, pos);
-                }
+                Object result = FLAN_CAN_INTERACT.invoke(null, initiator, pos, flanPermission);
                 if (result instanceof Boolean && !(Boolean) result) return false;
             } catch (Throwable ignored) {}
         }
@@ -177,15 +146,19 @@ public class ProtectionCompat {
     }
 
     public static boolean isAnyProtectionLoaded() {
-        return gpInstance != null || landsApi != null || FLAN_API_CLASS != null;
+        return gpInstance != null || landsApi != null || isFlanLoaded();
     }
 
-    private static String getLoadedMods() {
+    private static boolean isFlanLoaded() {
+        return FLAN_API_CLASS != null && FLAN_CAN_INTERACT != null
+                && FLAN_BREAK_PERMISSION != null && FLAN_HURT_PLAYER_PERMISSION != null;
+    }
+
+    public static String getLoadedMods() {
         StringBuilder sb = new StringBuilder();
         if (gpInstance != null) sb.append("GriefPrevention ");
         if (landsApi != null) sb.append("Lands ");
-        if (FLAN_API_CLASS != null) sb.append("Flan ");
+        if (isFlanLoaded()) sb.append("Flan ");
         return sb.toString().trim();
     }
 }
-
