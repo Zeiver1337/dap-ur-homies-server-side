@@ -90,7 +90,7 @@ Mahito 药水
 /clap                            鼓掌
 /mariojump                       马里奥跳
 /catchready                      接人准备
-/grab /push /kick /hug /slap     查看对应玩法提示
+/grab /push /kick /hug        查看对应玩法提示
 
 五、权限
 --------------------------------------------------------------------------------
