@@ -1,0 +1,366 @@
+================================================================================
+[v0.4.6] - 2026-08-25
+Bug修复（1个bug修复）：
+
+18. DapUrHomiesMod.java - handSwingingLastTick 内存泄漏
+    - 问题: 玩家断开连接时 handSwingingLastTick 集合未被清理，导致内存泄漏
+    - 修复: 在 DISCONNECT 事件处理中添加 handSwingingLastTick.remove(id)
+================================================================================
+================================================================================
+[v0.4.5] - 2026-08-25
+Bug修复（3个bug修复）：
+
+14. InteractionRouter.java - lastRightClickTick 内存泄漏
+    - 问题: debounce Map 每次右键交互都 put 新条目，但从未清理
+    - 修复: 在 UseEntityCallback 处理开始时清理超过100 tick（5秒）的过期条目
+
+15. InteractionRouter.java - hugClickTick 内存泄漏
+    - 问题: 拥抱点击记录 Map 只在成功拥抱时清除，多次尝试失败会残留
+    - 修复: 在 bothRightClickedWithin 检查时清理超过40 tick（2秒）的过期条目
+
+16. InteractionRouter.java - tryInteraction 死代码
+    - 问题: tryInteraction 私有方法及其辅助方法 capitalize、typeZh 从未被调用
+    - 修复: 移除死代码方法及未使用的 Supplier import
+================================================================================
+================================================================================
+[v0.4.4] - 2026-08-25
+Bug修复（1个bug修复）：
+
+13. DapSession.java - 玩家null/removed时未触发forceComplete
+    - 问题: tick()中检测到player为null或removed时直接return，不触发onPositioningComplete回调
+    - 修复: 合并null/removed检查，统一调用forceComplete()确保回调执行
+================================================================================
+================================================================================
+[v0.4.3] - 2026-08-25
+Bug修复合集（2个bug修复）：
+
+10. CarryingSlowdown.java - 减速效果只有4%而不是40%
+    - 问题: 使用 ADD_MULTIPLIED_TOTAL 操作配合 -0.04 值，导致速度仅减少4%
+    - 修复: 改为 ADD_VALUE 操作，-0.04 从基础速度(~0.1)中减去，实际减速约40%
+
+11. SpinHandler.java - startRiding 未检查返回值导致状态不一致
+    - 问题: startRiding 失败后仍设置 helicopterRider/helicopterSpinner 映射
+    - 修复: 将 startRiding 返回值检查，仅成功时才设置状态和触发效果
+================================================================================
+================================================================================
+[v0.4.2] - 2026-08-25
+Bug修复合集（9个bug修复）：
+
+1. GrabYeetHandler.java - shieldSwapCooldown 时间显示错误
+   - 问题: TickClock.now()返回tick单位，但代码按毫秒计算秒数
+   - 修复: (remainingTicks + 19) / 20 正确转换为秒
+
+2. DapHandler.java - bothPerfect时Danse dap被调用两次
+   - 问题: releaseCharge()先调用playDap，然后executeDap()内部又调用一次
+   - 修复: 移除releaseCharge()中冗余的playDap调用
+
+3. DapHandler.java - cycle-charge正弦波跳跃不自然
+   - 问题: 正弦波产生0→3→5→3→0的跳跃，缺少中间等级
+   - 修复: 改用三角波，产生0→2→5→2→0的平滑循环
+
+4. PushHandler.java - pendingJumpPushTime死代码
+   - 问题: 没有任何代码向该Map put值，但存在清理逻辑
+   - 修复: 移除pendingJumpPushTime Map及其所有清理逻辑
+
+5. DapSessionManager.java - 玩家下线后session残留
+   - 问题: 玩家下线后DapSession.tick()中检测到null直接return，不通知manager清理
+   - 修复: tick()循环前预检player null/removed，立即清理
+
+6. GrabYeetHandler.java - 自动释放时it.remove()导致力度计算错误
+   - 问题: tickCharge()中先it.remove()，然后releaseCharge()找不到start时间
+   - 修复: 移除it.remove()，让releaseCharge()自己处理移除
+
+7. DapUrHomiesMod.java - /mariojump命令缺少权限检查
+   - 问题: /clap有canInitiate检查，但/mariojump没有
+   - 修复: 添加PlayerPermissionManager.canInitiate(p, "mariojump")检查
+
+8. DapUrHomiesMod.java - /catchready命令缺少权限检查
+   - 问题: /catchready没有权限检查
+   - 修复: 添加PlayerPermissionManager.canInitiate(p, "catchready")检查
+
+9. KickHandler.java - releaseCharge中冷却未检查
+   - 问题: 注释声称已检查冷却，但代码中没有
+   - 修复: 在releaseCharge()开头添加CooldownManager检查
+================================================================================
+================================================================================
+[v0.4.1] - 2026-08-25
+蓄力碰拳双模式 + 完美击掌触发 Danse dap：
+
+1. 新增 chargedDapMode 配置（0=hold, 1=cycle）
+   - 管理员指令: /dap chargedmode <0|1>
+   - 持久化到 dap-ur-homies.json
+
+2. 模式0: hold-charge（原形式）
+   - Shift+右键开始蓄力，按住Shift level单调递增
+   - 松开Shift释放
+   - 双方都是level 5且开始时间差<=2tick → Danse dap
+
+3. 模式1: cycle-charge（循环蓄力）
+   - Shift+右键开始8秒蓄力会话
+   - level按正弦波循环: 0→2→5→2→0
+   - 再次Shift+右键释放
+   - 双方当前都是level 5 → Danse dap
+
+4. 完美击掌（tier 3）触发 Danse dap
+   - executeHighFive 中 tier >= 3 时播放 playDap 而非 playHighFive
+
+5. 相关文件
+   - ModConfig.java: 新增 chargedDapMode 字段
+   - DapHandler.java: 双模式蓄力/释放逻辑，executeHighFive 修改
+   - InteractionRouter.java: startCharge 已适配模式1的再次右键释放
+   - DapUrHomiesMod.java: /dap chargedmode 指令，帮助文本更新 v0.4.1
+   - Lang.java: chargedModeSet 双语消息
+================================================================================
+================================================================================
+[v0.4.0] - 2026-08-23
+回退到稳定 requestTeleport 方案 + 每 2 tick 传送优化：
+
+1. 回退 setPosition 方案（v0.3.12）
+   - 根因：setPosition + EntityTracker 相对位移包对玩家实体无效。
+     玩家位置权威在客户端，追踪器管不到玩家自己的本地物理。
+     结果：被抓者位置不同步，视觉效果异常。
+   - 结论：requestTeleport 是唯一能让纯服务端强制改变客户端玩家位置的手段。
+
+2. 恢复 requestTeleport 每 tick 压速度 + 每 2 tick 传送
+   - 每 tick 都执行 setVelocity(0,0,0) + fallDistance=0（防掉落）
+   - 每 2 tick 才执行 requestTeleport（减少视角回弹频率）
+   - 传送时仍传 held 自身 yaw/pitch（自由视角）
+   - 新增 carryTickCounter 计数器控制传送频率
+   - 文件：GrabYeetHandler.java
+
+3. 回退 Mixin pinVelocity（v0.3.12 新增）
+   - 移除 GrabbedPlayerControlMixin.tickMovement 注入
+   - 只保留 travel 取消（阻止输入移动）
+   - 文件：GrabbedPlayerControlMixin.java
+
+4. 权衡
+   - 功能正确性优先：requestTeleport 保证位置绝对同步、不掉落
+   - 视角回弹减半：每 2 tick 传送 vs 每 tick 传送，回弹频率降低 50%
+   - 轻微回弹是 requestTeleport 的固有特性（纯服务端无法完全避免）
+   - 若仍有明显回弹，可调为每 3 tick 传送（% 3 == 0）
+================================================================================
+
+================================================================================
+[v0.3.12] - 2026-08-23
+消除视角抽搐：setPosition + 追踪器相对位移包替代 requestTeleport：
+
+1. 问题：requestTeleport 每 tick 强发绝对坐标+角度，客户端传送确认/视角回弹循环
+   - 根因：requestTeleport 发送 PlayerPositionLookS2CPacket，客户端收到后
+     强制回传确认包，同时重置本地相机角度。每 tick 都发 = 每 tick 都重置视角。
+   - 表现：被抓者转动视角时出现抽搐/回弹。
+
+2. 修复：tickCarryPositions 改用 setPosition + syncWithPlayerPosition
+   - setPosition 只改服务端实体坐标，不重置客户端视角
+   - Vanilla EntityTrackerEntry 自动发送 EntityS2CPacket（相对位移包）
+     只含位置增量，不触碰相机角度
+   - syncWithPlayerPosition() 强制追踪器本 tick 立即发包
+   - 保留 setVelocity(0,0,0) + fallDistance=0 双重防掉落
+   - 文件：GrabYeetHandler.java
+
+3. 新增：GrabbedPlayerControlMixin.tickMovement 末尾注入 pinVelocity
+   - 取消重力/tick 驱动的下落运动，防止客户端把被 held 玩家往下拉
+   - travel 取消阻止了输入移动，但重力在 LivingEntity.tick 中仍作用
+   - tickMovement RETURN 处 setVelocity(0,0,0) + fallDistance=0 压住重力
+   - 文件：GrabbedPlayerControlMixin.java
+
+4. 效果
+   - 被抓者视角完全自由，无抽搐/回弹
+   - 位置仍每 tick 同步到 holder 头顶，不掉落
+   - 纯服务端方案，无需客户端 mod
+================================================================================
+
+================================================================================
+[v0.3.11] - 2026-08-23
+静止时被抓者掉落修复（tickCarryPositions 每 tick 强制传送）：
+
+1. 问题：holder 静止时被 grab 的玩家会掉下来
+   - 根因：v0.3.10 的 tickCarryPositions 只在 holder 移动超过 0.05 格时才传送。
+     holder 静止时不发传送包，但 setVelocity(0,0,0) 只清服务端速度。
+     客户端实体按本地物理权威运行，1 tick 后开始受重力下落。
+   - 表现：holder 站着不动时，被抓玩家从头顶缓缓下落到地面。
+
+2. 修复：tickCarryPositions 改为每 tick 无条件强制传送
+   - 删除 lastHolderPos 位置缓存和移动判断逻辑
+   - 每 tick 都执行 requestTeleport，将被抓玩家锁定在 holder 头顶
+   - 传送时仍使用 held.getYaw()/getPitch()，保持被抓者自由视角
+   - 同时设置 velocity=0 和 fallDistance=0，双重防掉落
+
+3. 视角回弹评估
+   - 每 tick 传送使用服务端已知的 held yaw/pitch
+   - 客户端转视角后发包 → 服务端更新 → 下一 tick 传送用新值
+   - 只要客户端持续发 Look 包，回弹几乎不可感（每 tick 跟上最新视角）
+   - 之前的回弹问题是因为锁视角（传 holder 的 yaw），现在传 held 自己的，回弹极小
+
+4. 清理
+   - 删除 lastHolderPos Map 字段声明
+   - 删除 cleanup() 中的 lastHolderPos.remove(playerId)
+   - 文件：GrabYeetHandler.java
+================================================================================
+
+================================================================================
+[v0.3.10] - 2026-08-23
+回退到传送方案（requestTeleport + 视角自由 + 静止优化）：
+
+1. 放弃骑乘方案（v0.3.7-0.3.9）
+   - 根因：纯服务端无法改变无 mod 客户端的乘客渲染高度。原版客户端按默认乘客位置
+     （holder 眼高处≈肩膀）渲染，Mixin 偏移只在服务端生效，客户端看到在原地/身上，
+     不在头顶。骑乘方案在纯服务端环境下不可行。
+   - 结论：必须用传送才能改变客户端实际渲染位置。
+
+2. tryGrab 删除骑乘代码
+   - 删除 target.stopRiding() + target.startRiding() + EntityPassengersSetS2CPacket 广播
+   - 恢复为纯状态记录（holding/heldBy/poseStates/lastGrabTick）
+
+3. tickCarryPositions 恢复为 requestTeleport 传送
+   - 传送带 held 自身 yaw/pitch（不锁视角）
+   - 优化：只在 holder 移动超过 0.05 格（squaredDistance > 0.0025）时才传送
+   - holder 静止时不打断 held 转视角，减少视角回弹
+   - 新增 lastHolderPos Map 追踪 holder 上次位置
+
+4. 清理 lastHolderPos
+   - cleanup() 中清理 lastHolderPos.remove(playerId)
+   - 防止内存泄漏
+
+5. PlayerEntityPassengerOffsetMixin 清空
+   - 保留空类避免 mixin 配置文件引用报错
+   - 注释说明骑乘方案已放弃的原因
+
+6. 视角自由保持（v0.3.9 已删除 syncHeldRotation）
+   - tryGrab 中无 syncHeldRotation
+   - tickHeldPlayers 中无每 tick 视角同步
+   - 投出时 yeetCurrentHold 仍锁 1 tick 视角（保留）
+================================================================================
+================================================================================
+[v0.3.9] - 2026-08-23
+抓取期间视角自由（删除所有 syncHeldRotation 同步）：
+
+1. 删除 tryGrab 中的 syncHeldRotation 调用
+   - 抓取初始化时不再强制同步被抓者视角到抓取者视角
+   - 被抓者从抓取瞬间起即可自由转动视角
+
+2. 删除 tickHeldPlayers 中的每 tick 视角同步逻辑
+   - 旧：每 tick 检查 holder yaw 变化 > 0.5 度时，强制同步 held 的 yaw/pitch
+   - 新：完全取消视角同步，被抓者视角完全由客户端控制
+   - 效果：抓取期间被抓者可自由观察周围环境，不再被强制面向抓取者方向
+
+3. 投出时仍锁 1 tick 视角（yeetCurrentHold 中保留）
+   - 投出瞬间 requestTeleport 带 throwYaw/throwPitch，确保投出方向正确
+   - 投出后 thrownPlayers 追踪结束，视角立即恢复自由
+
+4. 移动控制不变
+   - GrabbedPlayerControlMixin.travel 取消仍生效（被抓者无法自走）
+   - 位置同步仍由骑乘机制（startRiding）处理，无瞬移
+================================================================================
+================================================================================
+[v0.3.8] - 2026-08-23
+骑乘偏移量动态调整（Mixin 优化）：
+
+1. 乘客头顶偏移量从固定 0.3 改为动态计算
+   - 旧：base.y + 0.3（固定偏移，可能偏低或偏高）
+   - 新：base.add(0, holder.getHeight() * 0.5 + 0.3, 0)（根据玩家身高动态调整）
+   - 效果：确保被抓玩家始终显示在抓取者头顶上方，适配不同身高（如蹲下、游泳等状态）
+   - 文件：PlayerEntityPassengerOffsetMixin.java
+
+2. 确认骑乘方案稳定性
+   - tickCarryPositions 已是彻底 no-op（无手动传送）
+   - tryGrab 使用 startRiding + EntityPassengersSetS2CPacket 广播
+   - tickHeldPlayers 无残留 setPosition/requestTeleport
+   - 骑乘同步与手动传送不再冲突，瞬移根因已消除
+================================================================================
+================================================================================
+[v0.3.7] - 2026-08-23
+抓取位置同步根治修复（骑乘方案替代 setPosition）：
+
+1. 抓取后玩家瞬移/双位置（服务端与客户端位置不一致）
+   - 根因：setPosition 只改服务端实体坐标，但玩家实体的权威位置由客户端移动包决定。
+     服务端 setPosition 后，客户端仍在原位置发移动包，服务端又拉回 → 双方各执一词。
+   - 根治方案：改用原版 startRiding 骑乘机制，让 vanilla 乘客逻辑接管位置同步
+     （自动把乘客锁定在载具上，客户端也认）。
+   - 新增：EntityPassengersSetS2CPacket 广播，确保所有客户端立即看到骑乘关系。
+   - 新增：PlayerEntityPassengerOffsetMixin 注入 getPassengerRidingPos，
+     将乘客位置抬高 GRAB_OFFSET_UP = 0.3，显示在头顶。
+   - 删除：tickCarryPositions 手动 setPosition 同步（不再需要）。
+   - 删除：tickHeldPlayers 中手动 setPosition 同步（不再需要）。
+   - 保留：GrabbedPlayerControlMixin.travel 取消（骑乘时玩家本就无法自走，双重保险）。
+   - 文件：GrabYeetHandler.java, PlayerEntityPassengerOffsetMixin.java
+================================================================================
+================================================================================
+[v0.3.2] - 2026-08-23
+乘客偏移 + 蓄力Mixin + 鼓掌音效修复：
+
+1. 被抓取人不在头顶（偏到旁边3格）
+   - 根因：PlayerEntityPassengerOffsetMixin 中 GRAB_OFFSET_RIGHT = 3.0
+   - 修复：改为 GRAB_OFFSET_UP = 0.3，直接在头顶上方
+   - 文件：PlayerEntityPassengerOffsetMixin.java
+
+2. 蓄力必须右键被抓取人才行（右键空气无效）
+   - 根因：Mixin 中只在 startCharge 返回 SUCCESS/FAIL 时才 ci.cancel()
+   - 修复：无条件 ci.cancel()，确保右键空气必定触发蓄力
+   - 文件：ServerPlayNetworkHandlerMixin.java
+
+3. 鼓掌音效延长到2秒内播完
+   - 根因：executeDap 只播一次音效
+   - 修复：新增 clapLoopTicks/clapLoopPos 循环播放，40 tick（2秒）内每5 tick一次
+   - 文件：DapHandler.java
+================================================================================
+[v0.3.1] - 2026-08-23
+抓取后立即被放下修复：
+
+1. 抓取后同一次左键的空气挥拳触发放下
+   - 根因：tryGrab 返回 SUCCESS 后，tick循环中 handSwinging 上升沿无视"刚抓取"
+   - 修复：添加 lastGrabTick 抓取冷却窗口（10 tick = 0.5s）
+   - 文件：DapUrHomiesMod.java, GrabYeetHandler.java
+================================================================================
+[v0.3.0] - 2026-08-23
+抓取/放下/左键 3项核心修复：
+
+1. 抓取反向/骑乘状态错乱
+   - 根因：target.vehicle = holder 直接写反混淆字段
+   - 修复：改用 target.startRiding(holder, true, false)
+   - 文件：GrabYeetHandler.java
+
+2. 放下后仍显示在头上
+   - 根因：tryDrop 只 stopRiding() 没广播乘客清除包
+   - 修复：添加 EntityPassengersSetS2CPacket 广播
+   - 文件：GrabYeetHandler.java
+
+3. 左键也是击掌
+   - 修复：左键兜底改为 ActionResult.PASS
+   - 文件：InteractionRouter.java
+================================================================================
+[v0.2.9] - 2026-08-23
+左键放下 + 拥抱互按 + 同步Danse dap 修复：
+
+1. 左键不能放下
+   - 修复：未蓄力时调用 tryDrop(player) 放下
+   - 文件：DapUrHomiesMod.java
+
+2. 拥抱改为双方瞄头互按
+   - 修复：新增 aimingAtHead() + bothRightClickedWithin()
+   - 文件：InteractionRouter.java
+
+3. 右键兜底 = 击掌
+   - 文件：InteractionRouter.java
+
+4. 双方满级蓄力同步Danse dap
+   - 修复：releaseCharge() 检测双方满级释放
+   - 文件：DapHandler.java
+================================================================================
+[v0.2.8] - 2026-08-23
+右键交互手势重新映射 + BossBar 中文修复
+================================================================================
+[v0.2.7] - 2026-08-23
+抓取/蓄力/交互 3项修复
+================================================================================
+[v0.2.6] - 2026-08-23
+蓄力/投掷/撞墙/交互 6项修复
+================================================================================
+[v0.2.5] - 2026-08-23
+Bug修复 #26-33
+================================================================================
+[v0.2.4] - 2026-08-23
+Bug修复 #25
+================================================================================
+[v0.2.3] - 2026-08-23
+Bug修复 #1-24（累计）
+================================================================================
