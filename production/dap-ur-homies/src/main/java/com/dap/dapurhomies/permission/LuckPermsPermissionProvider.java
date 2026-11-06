@@ -18,12 +18,21 @@ import java.lang.reflect.Method;
 public class LuckPermsPermissionProvider implements PermissionProvider {
     private final FilePermissionProvider fallback = new FilePermissionProvider();
     private Method checkMethod;
+    private boolean checkByEntity;
     private boolean available = false;
 
     public LuckPermsPermissionProvider() {
         try {
             Class<?> permissionsClass = Class.forName("me.lucko.fabric.api.permissions.v0.Permissions");
-            checkMethod = permissionsClass.getMethod("check", net.minecraft.server.command.ServerCommandSource.class, String.class, boolean.class);
+            try {
+                // 当前 Fabric Permissions API 直接接受 Entity，避免命令源接口在不同映射下名称不同。
+                checkMethod = permissionsClass.getMethod("check", net.minecraft.entity.Entity.class, String.class, boolean.class);
+                checkByEntity = true;
+            } catch (NoSuchMethodException ignored) {
+                // 兼容旧版 API。
+                checkMethod = permissionsClass.getMethod("check", net.minecraft.server.command.ServerCommandSource.class, String.class, boolean.class);
+                checkByEntity = false;
+            }
             available = true;
         } catch (Exception e) {
             available = false;
@@ -38,7 +47,8 @@ public class LuckPermsPermissionProvider implements PermissionProvider {
     public boolean hasPermission(ServerPlayerEntity player, String node) {
         if (!available) return fallback.hasPermission(player, node);
         try {
-            return (boolean) checkMethod.invoke(null, player.getCommandSource(), node, fallback.hasPermission(player, node));
+            Object source = checkByEntity ? player : player.getCommandSource();
+            return (boolean) checkMethod.invoke(null, source, node, fallback.hasPermission(player, node));
         } catch (Exception e) {
             return fallback.hasPermission(player, node);
         }
