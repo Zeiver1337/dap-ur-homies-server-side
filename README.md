@@ -104,6 +104,10 @@ gradlew.bat clean build test --no-daemon --console=plain
 - 客户端要装 Fabric API，但不需要装本模组。
 - 服务端装了领地或保护插件时，建议保持 `protectionCheckEnabled=true`，投掷撞墙前会先查权限。
 
+## 文档
+
+完整使用说明在 [wiki](wiki/README.md)：安装、玩法、命令、配置、权限、插件联动、常见问题。
+
 ## 授权
 
 MIT，保留上游 Anteryo 的版权声明，全文见 [LICENSE](LICENSE)。
