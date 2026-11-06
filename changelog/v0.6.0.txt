@@ -1,0 +1,45 @@
+[v0.6.0] - 2026-09-22
+基于v0.5.8,修复完美击拳(Perfect Dap)无法触发的问题 + 架构重构降低耦合。
+
+Bug修复:
+1. DapHandler.java - startCharge() 互相蓄力解禁(P0,致命)
+   v0.5.3 引入的 isCharging(target) 检查与完美击拳判定直接矛盾:
+   A 蓄力后 B 永远无法开始蓄力,导致"双方同时互相蓄力"状态不可达,
+   完美击拳触发率为 0%。现改为仅当对方在蓄力"别人"时才拒绝。
+2. DapHandler.java - 完美击拳改为 pending-release 窗口判定(P1)
+   旧逻辑(Mode 0)要求双方 chargeStart 相差 ≤2 tick(0.1秒),
+   人类操作不可能满足(注释原意是比较"释放"时刻,实现误用"开始"时刻)。
+   新逻辑:满级释放后留下 1.5 秒(PERFECT_WINDOW_TICKS)应答窗口,
+   对方在窗口内满级释放(或此刻仍满级蓄力瞄准我)即触发完美击拳。
+   Mode 0 / Mode 1 统一适用。
+3. DapHandler.java - 完美击拳专属特效(P3)
+   旧版触发后只播放 power=6 的普通击拳特效,反馈平淡。
+   现触发 tier3 级特效(爆炸音+钟声+冲击波击退+大量粒子)+
+   双语 "PERFECT DAP / 完美击拳" actionbar 提示。
+4. DapHandler.java - cleanup()/purgeExpiredCooldowns() 覆盖新增 pendingPerfect 状态。
+
+架构重构(降低耦合度):
+5. 新增 interaction/InteractionModules.java - 模块生命周期注册表
+   主类不再硬编码 12 个 handler 的 register/tick/cleanup/purge 调用
+   (原 40+ 行重复调用压缩为 4 行),模块在一处声明、统一驱动,
+   执行顺序与历史硬编码顺序保持一致,行为无变化。
+6. 新增 interaction/PlayerInteractionState.java - 跨模块状态门面
+   InteractionRouter 与主类 tick 循环不再直接访问各 handler 的
+   静态状态(isHeld/isHolding/isThrownFlying/isHugging/isInSession),
+   统一通过门面查询;左右键排除集合分别封装为
+   isBusyForUse()/isBusyForAttack(),语义与历史实现完全一致。
+7. DapUrHomiesMod.java - 精简 onInitialize/断线清理/tick/purge 流程,
+   移除不再使用的 CooldownManager 导入。
+8. DapUrHomiesMod.java - /daphelp 版本号从 v0.5.0 更新为 v0.6.0。
+
+完美击拳触发方式(新版):
+- Mode 0(按住蓄力): 双方 Shift+右键互相蓄力,都蓄到满级(2.5秒),
+  任一方松开 Shift 释放后,另一方在 1.5 秒内满级释放即可触发;
+  双方一直按住到自动释放(3秒)时若均满级也会直接触发。
+- Mode 1(循环蓄力): 一方在峰值(满级)点击释放后,
+  另一方在 1.5 秒内于自己的峰值释放即可触发。
+
+构建:
+- Gradle 9.5.0 + Fabric Loom 1.17.21 + Java 21
+- Minecraft 1.21.11 / yarn 1.21.11+build.6 / loader 0.16.14 / Fabric API 0.141.6+1.21.11
+- Polymer 0.15.2+1.21.11 (core/common/resource-pack/autohost/networking 五模块嵌入)
