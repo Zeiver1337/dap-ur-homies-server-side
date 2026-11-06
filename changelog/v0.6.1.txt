@@ -1,0 +1,278 @@
+================================================================================
+Dap Ur Homies 累计更新日志（单文件汇总）
+项目：dap-ur-homies（Fabric 服务端模组，Minecraft 1.21.11）
+说明：本文件合并记录 v0.4.0 至 v0.6.1 的全部更新与修复，按版本倒序排列。
+================================================================================
+
+
+[v0.6.1] - 2026-11-06
+基于 v0.6.0，全量缺陷普查 + 修复 + 代码规范化。本版为当前发布版。
+
+一、致命/高危修复
+1. 双重 tick 驱动（P0）
+   - 问题：DapHandler、DapSessionManager、GrabYeetHandler、HugHandler、KickHandler、
+     PushHandler、FallCatchHandler、CarryingSlowdown、LaunchedPlayerTracker、
+     SimpleInteractions 等多个模块在各自 register() 中注册 END_SERVER_TICK，
+     主类 tick 中又逐个调用一次 tick()，导致所有周期逻辑每 tick 执行两次：
+     蓄力速度翻倍、冷却计时减半、粒子与音效重复、抓取位置抖动。
+     同时 /dap off 只拦截主类分支，模块自注册的 tick 仍然运行，全局开关形同虚设。
+   - 修复：register() 一律只注册事件回调，周期逻辑统一由
+     interaction/InteractionModules.tickAll(server) 单点驱动；
+     主类只保留一个 END_SERVER_TICK，并先判断 modEnabled。
+2. 拥抱（Hug）永远无法触发（P0）
+   - 问题：InteractionRouter 中潜行分支先命中并 return ActionResult.PASS，
+     拥抱判定位于其后，属于不可达代码；且旧的 bothRightClickedWithin /
+     recordHugClick 组合时序不可靠。
+   - 修复：拥抱判定前移到潜行分支之前，双方潜行 + 互瞄头部 + 2 tick 内各右键一次；
+     hugClickTick 改为顺序无关的 hugKey，并每 100 tick 清理超过 40 tick 的过期条目。
+3. 管理指令权限绕过（P1）
+   - /dap ban、/dap unban、/dap cooldown 的全局分支未校验管理员权限，普通玩家可改全局状态。
+   - 修复：统一走 Lang.noPermission(p) 拦截。
+4. 交互入口权限缺失（P1）
+   - dap / hug / slap / clap / catch 未检查发起者 canInitiate 与目标 canReceive，
+     被封禁玩家仍可发起，目标关闭接收仍被打扰。
+   - 修复：所有入口补齐发起方开关、封禁、冷却（bypassesCooldown）与目标接收校验。
+5. 抓取/投掷/人盾状态错乱（P1）
+   - disableShieldMode(holder, reattach) 的 reattach 参数在丢弃/投掷路径被误传为 true，
+     重新骑乘导致投掷初速度被原版骑乘逻辑吃掉，玩家扔不出去。
+   - 修复：放下/投掷传 false（不再重新骑乘），仅切换人盾时传 true。
+   - cleanup() 改为无论 holding 条目是否已存在都强制清理 shieldStands /
+     shieldModeActive / shieldSwapCooldown；修复乘客匹配遗漏（getUuid().equals）。
+   - 跨世界抓取会残留，改为世界不一致直接 cleanup。
+6. 被抓玩家位置滞后（P1）
+   - 服务端实体坐标未更新就直接 requestTeleport，客户端收到旧坐标。
+   - 修复：先 refreshPositionAndAngles(...) 再 requestTeleport。
+7. 并发安全（P1）
+   - GrabYeetHandler 的 holding / heldBy / poseStates 被客户端 Mixin（集成服）读取，
+     原 HashMap 存在并发读写风险。
+   - 修复：全部改为 ConcurrentHashMap；tickHeldPlayers 改为 for-each 遍历 +
+     cleanup(hid) + continue，避免遍历中结构修改。
+
+二、功能接线修复
+8. 跳跃挣脱（文档已描述但从未接线）
+   - 主 tick 检测 player.getPlayerInput().jump() 的上升沿，调用
+     GrabYeetHandler.tryEscape(player)（20% 成功率，每次起跳判定一次）。
+9. 蓄力飞踢入口不可达
+   - 原实现只有「普通踢」，KickHandler.startCharge 无调用点。
+   - 修复：潜行 + 看脚部 + 右键第一次开始蓄力，3 秒内再次同操作释放；
+     超时自动释放；冷却统一走 bypassesCooldown。
+10. 配置项失效
+   - adminBypassCooldown：PlayerPermissionManager.bypassesCooldown 未读取，现生效。
+   - clapIntervalTicks：ClapLooper.Loop 增加 interval，实际参与节奏推进。
+   - globalLang：Lang 全局语言只改内存不落盘，现写入配置并持久化。
+   - /dap sound 修改后未保存，现调用 ModConfig.save()。
+
+三、健壮性修复
+11. 配置文件损坏容错
+    - ModConfig.load() 与 FilePermissionProvider.load() 捕获
+      IOException / RuntimeException，单条非法 UUID 或空值跳过，不再导致启动崩溃。
+12. 断线清理
+    - DISCONNECT 同时清理 handSwingingLastTick、jumpHeldLastTick 与
+      InteractionModules.cleanupAll(id)，避免内存泄漏与残留持有关系。
+
+四、代码规范化
+13. 删除死代码
+    - SpinHandler.java：无任何可达入口（客户端旋转按键在纯服务端不可读），整体删除。
+    - PlayerEntityPassengerOffsetMixin.java：空实现，删除并从 mixins.json 移除。
+    - PushHandler：pendingJumpPush / pushWindow / startPushWindow / isInPushWindow /
+      confirmJumpPush / PUSH_WINDOW_TICKS 等从未被写入的死逻辑全部删除。
+    - KickHandler：未使用的 NORMAL_KICK_RANGE 与重复 ServerTickEvents 导入删除。
+14. 交互路由重构
+    - InteractionRouter 分支顺序固定为：盾/被投掷排除 → 疾跑推搡 → 蓄力/普通碰拳
+      → 拥抱 → 潜行（飞踢 / 蓄力碰拳）→ 站立普通碰拳。
+15. 帮助文本修正
+    - Push 改为「疾跑 + 右键」；Drop 改为「未蓄力左键」；
+      DropKick 改为「潜行 + 看脚部 + 右键两次」；版本号更新为 v0.6.1。
+
+五、构建
+- Minecraft 1.21.11 / Yarn 1.21.11+build.6
+- Fabric Loader 0.16.14 / Fabric API 0.141.6+1.21.11
+- Fabric Loom 1.17.21 / Gradle 9.5.0 / Java 21
+- Polymer 0.15.2+1.21.11 五模块嵌入
+- 产物：dap-ur-homies-0.6.1.jar、dap-ur-homies-0.6.1-sources.jar
+
+
+[v0.6.0] - 2026-09-22
+基于 v0.5.8，修复完美击拳（Perfect Dap）无法触发的问题 + 架构重构降低耦合。
+
+Bug 修复：
+1. DapHandler.startCharge() 互相蓄力解禁（P0）
+   v0.5.3 引入的 isCharging(target) 检查与完美击拳判定直接矛盾：
+   A 蓄力后 B 永远无法开始蓄力，导致「双方同时互相蓄力」状态不可达，触发率为 0%。
+   改为仅当对方在蓄力「别人」时才拒绝。
+2. 完美击拳改为 pending-release 窗口判定（P1）
+   旧逻辑要求双方 chargeStart 相差 ≤2 tick（0.1 秒），人类操作不可能满足。
+   新逻辑：满级释放后留下 1.5 秒（PERFECT_WINDOW_TICKS）应答窗口，
+   对方在窗口内满级释放（或此刻仍满级蓄力瞄准我）即触发。Mode 0 / Mode 1 统一适用。
+3. 完美击拳专属特效：tier3 级特效（爆炸音 + 钟声 + 冲击波击退 + 大量粒子）
+   + 双语 "PERFECT DAP / 完美击拳" actionbar。
+4. cleanup() / purgeExpiredCooldowns() 覆盖新增的 pendingPerfect 状态。
+
+架构重构：
+5. 新增 interaction/InteractionModules.java：模块生命周期注册表，
+   主类不再硬编码 12 个 handler 的 register/tick/cleanup/purge 调用。
+6. 新增 interaction/PlayerInteractionState.java：跨模块状态门面，
+   InteractionRouter 与主类不再直接访问各 handler 的静态状态。
+7. DapUrHomiesMod 精简 onInitialize / 断线清理 / tick / purge 流程。
+8. /daphelp 版本号更新为 v0.6.0。
+
+完美击拳触发方式：
+- Mode 0（按住蓄力）：双方 Shift+右键互相蓄力，都蓄到满级（2.5 秒），
+  任一方松开 Shift 释放后，另一方在 1.5 秒内满级释放即可触发；
+  双方一直按住到自动释放（3 秒）时若均满级也会直接触发。
+- Mode 1（循环蓄力）：一方在峰值（满级）点击释放后，
+  另一方在 1.5 秒内于自己的峰值释放即可触发。
+
+
+[v0.5.8] - 2026-08-26
+基于 v0.5.7，修复音效逻辑错误。
+1. DapHandler.executeDap() 错误使用 ClapLooper 播放 2 秒鼓掌循环
+   （击掌/碰拳应只播放单次音效）。
+2. DapHandler.executeHighFive() 错误使用 ClapLooper 播放 2 秒鼓掌循环
+   （击掌已有 tier-based 音效系统）。
+3. SimpleInteractions.onClap() 未使用 ClapLooper
+   （/clap 命令应播放 2 秒节奏鼓掌，而非 3 次短音效）。
+
+功能说明：
+- 马里奥跳（/mariojump）：超级跳跃，前 8 tick 强力上升（0.35 速度）+ 接下来 7 tick
+  弱上升（0.15 速度），带 END_ROD 粒子轨迹和 BIT 音效，3 秒冷却。
+
+依赖修正（v0.5.8-depfix）：
+- fabric.mod.json 的 minecraft 版本范围从 ">=1.21" 收紧为 ">=1.21.1"。
+- Polymer 5 个子模块全部通过 include() 嵌入。
+- LuckPerms / Danse / 领地保护均为反射软依赖，无硬依赖。
+
+
+[v0.5.7] - 2026-08-25
+基于 v0.5.6，继续修复 bug。
+1. DapHandler.startCharge() Mode 1 死代码修复（循环充电检查移到通用 isCharging 检查之前）。
+2. GrabYeetHandler 超距离自动丢弃时 shield 模式清理顺序错误。
+3. enableShieldMode / disableShieldMode 中 startRiding 返回值未检查（失败时优雅回退）。
+4. InteractionRouter 左键事件缺少 isHeld(sp) 和 isThrownFlying 检查。
+
+研究分析：
+- 完成当前项目全部 36 个 Java 文件的代码审查。
+- 完成原项目 25+ 个文件的对比研究。
+- 累计发现并修复 28 项 bug。
+
+
+[v0.5.6] - 2026-08-25
+1. InteractionRouter 右键事件缺少 isHeld(sp) 检查（被抓起玩家仍可右键互动）。
+2. lastRightClickTick 清理频率优化：从每事件清理改为每 20 tick 清理一次，减少 GC 压力。
+
+
+[v0.5.5] - 2026-08-25
+1. InteractionRouter 拥抱条件错误修复（!target.isSneaking() → target.isSneaking()，双方都需蹲下）。
+2. GrabYeetHandler throwImmunity 死代码修复（被投掷后 1 秒内无法被再次抓取）。
+3. DapSessionManager 线程安全修复（HashMap → ConcurrentHashMap，HashSet → newKeySet）。
+
+
+[v0.5.4] - 2026-08-25
+1. DapHandler.releaseCharge() bothPerfect 判断未验证 partner 的蓄力目标是否是当前玩家。
+2. DapHandler.cleanup() 缺少 chargeTarget.remove(playerId)（playerId 作为蓄力者时泄漏）。
+
+
+[v0.5.3] - 2026-08-25
+1. DapHandler.releaseCharge() 普通分支未给 target 设置冷却（target 可立即反击）。
+2. DapHandler.startCharge() 未检查 target 是否正在蓄力（状态冲突）。
+3. DapHandler.handleNormalDap() 未检查 isCharging（与普通 dap 冲突）。
+4. ClapLooper rhythmIndex 由 tick() 局部变量移到 Loop 类中（每个 Loop 独立节奏）。
+
+
+[v0.5.2] - 2026-08-25
+1. SpinHandler.MAX_SPIN_TICKS 单位错误（30000 ticks → TickClock.msToTicks(30000)，25 分钟修正为 30 秒）。
+2. GrabYeetHandler.tickCharge() 内联自动释放，避免 ConcurrentModificationException。
+3. GrabYeetHandler 删除重复距离检查。
+4. GrabYeetHandler lastGrabTick 字段移到字段声明区域。
+5. KickHandler ADD_MULTIPLIED_TOTAL → ADD_VALUE（与 CarryingSlowdown 一致）。
+
+
+[v0.5.1] - 2026-08-25
+基于 v0.5.0，重新应用 v0.4.0 的 bug 修复 + 新增功能。
+1. GrabYeetHandler 人盾切换冷却时间显示错误。
+2. GrabYeetHandler 自动释放 it.remove() 竞态。
+3. PushHandler pendingJumpPushTime 死代码移除。
+4. KickHandler.releaseCharge() 冷却检查。
+5. CarryingSlowdown ADD_MULTIPLIED_TOTAL → ADD_VALUE。
+6. SpinHandler startRiding 返回值检查。
+7. DapSession null/removed 时 forceComplete。
+8. InteractionRouter 内存泄漏清理 + 死代码移除。
+9. 新增 /daphow 帮助指令。
+10. ClapLooper 重写为 2 秒鼓掌音效（12 拍节奏，snare 鼓声）。
+
+
+[v0.5.0] - 2026-08-25
+- 新增蓄力击掌模式（Charged Dap）。
+- 新增完美击掌逻辑。
+- 新增 ClapLooper 鼓掌音效系统。
+
+
+[v0.4.6] - 2026-08-25
+1. DapUrHomiesMod handSwingingLastTick 内存泄漏：
+   玩家断开连接时集合未清理，已在 DISCONNECT 事件中添加 remove。
+
+
+[v0.4.5] - 2026-08-25
+1. InteractionRouter lastRightClickTick 内存泄漏：debounce Map 从未清理，
+   改为清理超过 100 tick（5 秒）的过期条目。
+2. InteractionRouter hugClickTick 内存泄漏：只在成功拥抱时清除，
+   改为清理超过 40 tick（2 秒）的过期条目。
+3. InteractionRouter tryInteraction 死代码：
+   移除从未被调用的私有方法及未使用的 Supplier 导入。
+
+
+[v0.4.4] - 2026-08-25
+1. DapSession.tick() 检测到 player 为 null 或 removed 时直接 return，
+   不触发 onPositioningComplete 回调；合并检查并统一调用 forceComplete()。
+
+
+[v0.4.3] - 2026-08-25
+1. CarryingSlowdown 减速只有 4%：ADD_MULTIPLIED_TOTAL 配合 -0.04，
+   改为 ADD_VALUE 后实际减速约 40%。
+2. SpinHandler startRiding 未检查返回值导致状态不一致，改为成功后
+   才设置 helicopterRider / helicopterSpinner 映射。
+
+
+[v0.4.2] - 2026-08-25
+1. GrabYeetHandler shieldSwapCooldown 时间显示错误（tick 当毫秒算）。
+2. DapHandler bothPerfect 时 Danse dap 被调用两次（移除冗余 playDap）。
+3. DapHandler cycle-charge 正弦波跳跃不自然，改用三角波。
+4. PushHandler pendingJumpPushTime 死代码移除。
+5. DapSessionManager 玩家下线后 session 残留。
+6. GrabYeetHandler 自动释放时 it.remove() 导致力度计算错误。
+7. /mariojump 命令缺少权限检查。
+8. /catchready 命令缺少权限检查。
+9. KickHandler.releaseCharge 冷却未检查。
+
+
+[v0.4.1] - 2026-08-25
+蓄力碰拳双模式 + 完美击掌触发 Danse dap：
+1. 新增 chargedDapMode 配置（0=hold，1=cycle），/dap chargedmode <0|1> 持久化。
+2. 模式 0：Shift+右键开始蓄力，按住 Shift level 单调递增，松开释放。
+3. 模式 1：Shift+右键开始 8 秒蓄力会话，level 三角波循环 0→2→5→2→0，
+   再次 Shift+右键释放。
+4. 完美击掌（tier 3）触发 Danse dap。
+5. 相关文件：ModConfig、DapHandler、InteractionRouter、DapUrHomiesMod、Lang。
+
+
+[v0.4.0] - 2026-08-23
+回退到稳定 requestTeleport 方案 + 每 2 tick 传送优化：
+1. 回退 setPosition 方案：setPosition + EntityTracker 相对位移包对玩家实体无效，
+   玩家位置权威在客户端，纯服务端必须用 requestTeleport 才能强制改变客户端位置。
+2. 恢复 requestTeleport：每 tick setVelocity(0,0,0) + fallDistance=0 防掉落，
+   每 2 tick 执行一次传送以降低视角回弹频率，传送时使用 held 自身 yaw/pitch。
+3. 回退 Mixin pinVelocity，仅保留 travel 取消（阻止被抓者自行移动）。
+4. 权衡：功能正确性优先；若仍有明显回弹，可改为每 3 tick 传送。
+
+
+================================================================================
+更早版本（v0.2.3 ~ v0.3.12）摘要
+================================================================================
+- v0.3.12 消除视角抽搐：setPosition + 追踪器相对位移包替代 requestTeleport，
+  并注入 pinVelocity 压制重力；v0.3.11 起确认纯服务端最终仍需 requestTeleport。
+- v0.3.7 ~ v0.3.10 尝试 startRiding 骑乘同步，因客户端按默认乘客高度渲染，
+  无法在纯服务端改变渲染位置而放弃。
+- v0.3.1 ~ v0.3.6 抓取/放下/左键映射、视角同步、乘客偏移量迭代。
+- v0.2.7 ~ v0.3.0 右键手势重新映射、BossBar 中文、抓取方向与骑乘状态修复。
+- v0.2.3 ~ v0.2.6 初始 bug 清单（#1-#33）与蓄力/投掷/撞墙基础逻辑。
+================================================================================
