@@ -1,4 +1,4 @@
-﻿
+
 ================================================================================
 FILE: ./main/java/com/dap/dapurhomies/command/DapCommands.java
 ================================================================================
@@ -321,7 +321,6 @@ public class DapCommands {
     }
 }
 
-
 ================================================================================
 FILE: ./main/java/com/dap/dapurhomies/command/InteractionCommands.java
 ================================================================================
@@ -562,7 +561,6 @@ public class InteractionCommands {
     }
 }
 
-
 ================================================================================
 FILE: ./main/java/com/dap/dapurhomies/compat/DanseCompat.java
 ================================================================================
@@ -583,11 +581,11 @@ import java.util.Set;
 public class DanseCompat {
     private static final Logger LOGGER = LoggerFactory.getLogger("dap-ur-homies");
     private static final boolean DANSE_LOADED = FabricLoader.getInstance().isModLoaded("danse");
-    private static Method onStartMethod = null;
-    private static Method onStopMethod = null;
+    private static Method onStartMethod;
+    private static Method onStopMethod;
+    private static Method getModelMethod;
 
-    // Track failed animation names to avoid log spam.
-    private static final Set<String> failedAnimations = new HashSet<>();
+    private static final Set<String> FAILED_ANIMATIONS = new HashSet<>();
 
     static {
         if (DANSE_LOADED) {
@@ -595,9 +593,15 @@ public class DanseCompat {
                 Class<?> gestureController = Class.forName("de.tomalbrc.danse.GestureController");
                 onStartMethod = gestureController.getMethod("onStart", ServerPlayerEntity.class, String.class);
                 onStopMethod = gestureController.getMethod("onStop", ServerPlayerEntity.class);
-                LOGGER.info("[DapUrHomies] Danse mod detected via de.tomalbrc.danse.GestureController, animation integration enabled!");
+                try {
+                    Class<?> registry = Class.forName("de.tomalbrc.danse.registry.PlayerModelRegistry");
+                    getModelMethod = registry.getMethod("getModel", String.class);
+                } catch (Exception e) {
+                    LOGGER.warn("[DapUrHomies] Danse animation registry is unavailable; custom animation names will be used unchanged.");
+                }
+                LOGGER.info("[DapUrHomies] Danse integration enabled.");
             } catch (Exception e) {
-                LOGGER.warn("[DapUrHomies] Danse detected but API not accessible: " + e.getMessage());
+                LOGGER.warn("[DapUrHomies] Danse detected but GestureController API is incompatible: " + e.getMessage());
             }
         }
     }
@@ -606,95 +610,111 @@ public class DanseCompat {
         return DANSE_LOADED && onStartMethod != null;
     }
 
-    public static boolean canPlayDanse(ServerPlayerEntity initiator, ServerPlayerEntity target, String type) {
-        if (!isDanseLoaded()) return false;
-        if (!DapUrHomiesMod.isModEnabled()) return false;
-        if (!PlayerPermissionManager.canInitiate(initiator, "danse")) return false;
-        if (!PlayerPermissionManager.canReceive(target, "danse")) return false;
-        return true;
+    private static boolean canPlayPair(ServerPlayerEntity initiator, ServerPlayerEntity target) {
+        return isDanseLoaded()
+                && DapUrHomiesMod.isModEnabled()
+                && PlayerPermissionManager.canInitiate(initiator, "danse")
+                && PlayerPermissionManager.canReceive(target, "danse");
     }
 
-    public static void playAnimation(ServerPlayerEntity player, String animationName) {
-        if (!isDanseLoaded() || player == null) return;
+    private static String resolveAnimation(String... candidates) {
+        if (getModelMethod == null) return candidates[0];
+        for (String candidate : candidates) {
+            try {
+                // 优先使用服务器安装的同名自定义动画，缺失时使用 Danse 内置动画。
+                if (getModelMethod.invoke(null, candidate) != null) return candidate;
+            } catch (Exception e) {
+                if (FAILED_ANIMATIONS.add(candidate)) {
+                    LOGGER.warn("[DapUrHomies] Failed to query Danse animation '{}': {}", candidate, e.getMessage());
+                }
+                return null;
+            }
+        }
+        if (FAILED_ANIMATIONS.add(candidates[0])) {
+            LOGGER.warn("[DapUrHomies] No registered Danse animation found for '{}'. Tried: {}",
+                    candidates[0], String.join(", ", candidates));
+        }
+        return null;
+    }
+
+    public static void playAnimation(ServerPlayerEntity player, String... candidates) {
+        if (!isDanseLoaded() || player == null || candidates.length == 0) return;
+        String animationName = resolveAnimation(candidates);
+        if (animationName == null) return;
         try {
             onStartMethod.invoke(null, player, animationName);
         } catch (Exception e) {
-            // Only log once per animation name to avoid console spam.
-            if (failedAnimations.add(animationName)) {
-                LOGGER.warn("[DapUrHomies] Failed to play Danse animation '{}'. This animation may not exist in Danse. Suppressing further warnings for this animation.", animationName);
+            if (FAILED_ANIMATIONS.add(animationName)) {
+                LOGGER.warn("[DapUrHomies] Failed to play Danse animation '{}'.", animationName, e);
             }
         }
     }
 
     public static void stopAnimation(ServerPlayerEntity player) {
-        if (!isDanseLoaded() || player == null) return;
+        if (!isDanseLoaded() || onStopMethod == null || player == null) return;
         try {
             onStopMethod.invoke(null, player);
         } catch (Exception e) {
-            LOGGER.warn("[DapUrHomies] Failed to stop Danse animation: " + e.getMessage());
+            LOGGER.warn("[DapUrHomies] Failed to stop Danse animation.", e);
         }
     }
 
     public static void playDap(ServerPlayerEntity p1, ServerPlayerEntity p2) {
-        if (!canPlayDanse(p1, p2, "dap")) return;
-        playAnimation(p1, "dap");
-        playAnimation(p2, "dap");
+        if (!canPlayPair(p1, p2)) return;
+        playAnimation(p1, "dap", "dab");
+        playAnimation(p2, "dap", "dab");
     }
 
     public static void playHighFive(ServerPlayerEntity p1, ServerPlayerEntity p2) {
-        if (!canPlayDanse(p1, p2, "dap")) return;
-        playAnimation(p1, "highfive");
-        playAnimation(p2, "highfive");
+        if (!canPlayPair(p1, p2)) return;
+        playAnimation(p1, "highfive", "high_five", "wave");
+        playAnimation(p2, "highfive", "high_five", "wave");
     }
 
     public static void playHug(ServerPlayerEntity p1, ServerPlayerEntity p2) {
-        if (!canPlayDanse(p1, p2, "hug")) return;
-        playAnimation(p1, "hug");
-        playAnimation(p2, "hug");
+        if (!canPlayPair(p1, p2)) return;
+        playAnimation(p1, "hug", "fold");
+        playAnimation(p2, "hug", "fold");
     }
 
     public static void playGrab(ServerPlayerEntity holder, ServerPlayerEntity victim) {
-        if (!canPlayDanse(holder, victim, "grab")) return;
-        playAnimation(victim, "grabbed");
+        if (!canPlayPair(holder, victim)) return;
+        playAnimation(victim, "grabbed", "fall");
     }
 
     public static void playYeet(ServerPlayerEntity victim) {
-        if (!isDanseLoaded()) return;
-        if (!PlayerPermissionManager.canInitiate(victim, "danse")) return;
-        playAnimation(victim, "yeet");
+        if (!isDanseLoaded() || !PlayerPermissionManager.canInitiate(victim, "danse")) return;
+        playAnimation(victim, "yeet", "ascend");
     }
 
     public static void playKick(ServerPlayerEntity kicker, ServerPlayerEntity victim) {
-        if (!canPlayDanse(kicker, victim, "kick")) return;
-        playAnimation(kicker, "kick");
-        playAnimation(victim, "kicked");
+        if (!canPlayPair(kicker, victim)) return;
+        playAnimation(kicker, "kick", "bits");
+        playAnimation(victim, "kicked", "fall");
     }
 
     public static void playPush(ServerPlayerEntity pusher, ServerPlayerEntity victim) {
-        if (!canPlayDanse(pusher, victim, "push")) return;
-        playAnimation(pusher, "push");
-        playAnimation(victim, "pushed");
+        if (!canPlayPair(pusher, victim)) return;
+        playAnimation(pusher, "push", "bits");
+        playAnimation(victim, "pushed", "fall");
     }
 
     public static void playSlap(ServerPlayerEntity slapper, ServerPlayerEntity victim) {
-        if (!canPlayDanse(slapper, victim, "slap")) return;
-        playAnimation(slapper, "slap");
-        playAnimation(victim, "slapped");
+        if (!canPlayPair(slapper, victim)) return;
+        playAnimation(slapper, "slap", "facepalm");
+        playAnimation(victim, "slapped", "facepalm");
     }
 
     public static void playClap(ServerPlayerEntity player) {
-        if (!isDanseLoaded()) return;
-        if (!PlayerPermissionManager.canInitiate(player, "danse")) return;
-        playAnimation(player, "clap");
+        if (!isDanseLoaded() || !PlayerPermissionManager.canInitiate(player, "danse")) return;
+        playAnimation(player, "clap", "wave");
     }
 
     public static void playMarioJump(ServerPlayerEntity player) {
-        if (!isDanseLoaded()) return;
-        if (!PlayerPermissionManager.canInitiate(player, "danse")) return;
-        playAnimation(player, "mario_jump");
+        if (!isDanseLoaded() || !PlayerPermissionManager.canInitiate(player, "danse")) return;
+        playAnimation(player, "mario_jump", "ascend");
     }
 }
-
 
 ================================================================================
 FILE: ./main/java/com/dap/dapurhomies/compat/ProtectionCompat.java
@@ -705,38 +725,35 @@ package com.dap.dapurhomies.compat;
 import com.dap.dapurhomies.DapUrHomiesMod;
 import com.dap.dapurhomies.config.ModConfig;
 import net.minecraft.server.network.ServerPlayerEntity;
+import net.minecraft.util.Identifier;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.world.World;
 
 import java.lang.reflect.Method;
 
 /**
- * Protection-mod compatibility layer.
- * Uses reflection to check common Fabric protection plugins (GriefPrevention, Lands, Flan)
- * without hard dependencies. Falls back to "allow" if no protection mod is detected.
+ * 领地保护软依赖。只有完整解析到对应 API 时才启用检查，解析失败则保持放行。
  */
 public class ProtectionCompat {
 
-    // === GriefPrevention (Fabric) ===
     private static final Class<?> GP_CLASS;
     private static final Method GP_GET_DATA_STORE;
     private static final Method GP_GET_CLAIM_AT;
     private static final Method GP_CLAIM_ALLOW_BUILD;
     private static Object gpInstance;
 
-    // === Lands ===
     private static final Class<?> LANDS_API_CLASS;
     private static final Method LANDS_GET_AREA_BP;
     private static final Method LANDS_GET_AREA_WBP;
     private static Object landsApi;
     private static boolean landsWarned = false;
 
-    // === Flan ===
     private static final Class<?> FLAN_API_CLASS;
     private static final Method FLAN_CAN_INTERACT;
+    private static final Object FLAN_BREAK_PERMISSION;
+    private static final Object FLAN_HURT_PLAYER_PERMISSION;
 
     static {
-        // --- GriefPrevention ---
         Class<?> gp = null;
         Method gpGetDs = null, gpGetClaim = null, gpAllowBuild = null;
         Object gpInst = null;
@@ -747,7 +764,6 @@ public class ProtectionCompat {
             Class<?> gpDs = Class.forName("me.ryanhamshire.GriefPrevention.DataStore");
             Class<?> gpClaim = Class.forName("me.ryanhamshire.GriefPrevention.Claim");
             gpGetClaim = gpDs.getMethod("getClaimAt", BlockPos.class, boolean.class, gpClaim);
-            // Check if initiator has build permission in the claim
             gpAllowBuild = gpClaim.getMethod("allowBuild", net.minecraft.entity.player.PlayerEntity.class);
         } catch (Throwable ignored) {}
         GP_CLASS = gp;
@@ -756,88 +772,72 @@ public class ProtectionCompat {
         GP_CLAIM_ALLOW_BUILD = gpAllowBuild;
         gpInstance = gpInst;
 
-        // --- Lands ---
         Class<?> lands = null;
         Method landsGetBp = null, landsGetWbp = null;
         Object landsApiObj = null;
         try {
             lands = Class.forName("me.angeschossen.lands.api.LandsIntegration");
             landsApiObj = lands.getMethod("of", String.class).invoke(null, "dap-ur-homies");
-            // Try both signatures: getArea(BlockPos) and getArea(World, BlockPos)
             try {
                 landsGetBp = lands.getMethod("getArea", BlockPos.class);
-            } catch (NoSuchMethodException e) {
-                landsGetBp = null;
-            }
+            } catch (NoSuchMethodException ignored) {}
             try {
                 landsGetWbp = lands.getMethod("getArea", World.class, BlockPos.class);
-            } catch (NoSuchMethodException e) {
-                landsGetWbp = null;
-            }
+            } catch (NoSuchMethodException ignored) {}
         } catch (Throwable ignored) {}
         LANDS_API_CLASS = lands;
         LANDS_GET_AREA_BP = landsGetBp;
         LANDS_GET_AREA_WBP = landsGetWbp;
         landsApi = landsApiObj;
 
-        // --- Flan ---
         Class<?> flan = null;
         Method flanCanInteract = null;
+        Object flanBreak = null, flanHurtPlayer = null;
         try {
-            flan = Class.forName("io.github.flemmli97.flan.api.permission.PermissionHelper");
-            flanCanInteract = flan.getMethod("checkPermission",
-                net.minecraft.server.network.ServerPlayerEntity.class,
-                BlockPos.class,
-                String.class); // "INTERACT_ENTITY" or similar
-        } catch (Exception ignored) {
-            // Try alternative Flan API class
-            try {
-                flan = Class.forName("io.github.flemmli97.flan.api.ClaimHandler");
-                flanCanInteract = flan.getMethod("canInteract",
-                    net.minecraft.server.network.ServerPlayerEntity.class,
-                    BlockPos.class);
-            } catch (Exception ignored2) {}
+            flan = Class.forName("io.github.flemmli97.flan.api.ClaimHandler");
+            flanCanInteract = flan.getMethod("canInteract", ServerPlayerEntity.class, BlockPos.class, Identifier.class);
+            Class<?> builtinPermission = Class.forName("io.github.flemmli97.flan.api.permission.BuiltinPermission");
+            flanBreak = builtinPermission.getField("BREAK").get(null);
+            flanHurtPlayer = builtinPermission.getField("HURTPLAYER").get(null);
+        } catch (Throwable ignored) {
+            flanCanInteract = null;
+            flanBreak = null;
+            flanHurtPlayer = null;
         }
         FLAN_API_CLASS = flan;
         FLAN_CAN_INTERACT = flanCanInteract;
+        FLAN_BREAK_PERMISSION = flanBreak;
+        FLAN_HURT_PLAYER_PERMISSION = flanHurtPlayer;
 
         if (isAnyProtectionLoaded()) {
             DapUrHomiesMod.LOGGER.info("[DapUrHomies] Protection compat loaded. Detected: " + getLoadedMods());
         }
     }
 
-    /**
-     * Check if the initiator can interact with the target at the target's location.
-     * Returns true if interaction is allowed (no protection blocking it).
-     *
-     * <p>Logic: checks whether the <b>initiator</b> has permission to build/interact
-     * at the target's position. This is more accurate than checking claim ownership.
-     */
+    /** 玩家之间的交互使用 Flan 的 hurt_player 权限。 */
     public static boolean canInteract(ServerPlayerEntity initiator, ServerPlayerEntity target) {
-        return canBuildAt(initiator, target.getBlockPos());
+        return check(initiator, target.getBlockPos(), FLAN_HURT_PLAYER_PERMISSION);
     }
 
-    /**
-     * Check whether {@code initiator} may modify/interact at {@code pos}.
-     * Returns true when no protection mod blocks it (or protection checks are disabled).
-     */
+    /** 撞墙破坏方块使用 Flan 的 break 权限。 */
     public static boolean canBuildAt(ServerPlayerEntity initiator, BlockPos pos) {
+        return check(initiator, pos, FLAN_BREAK_PERMISSION);
+    }
+
+    private static boolean check(ServerPlayerEntity initiator, BlockPos pos, Object flanPermission) {
         if (!ModConfig.get().protectionCheckEnabled) return true;
 
-        // === GriefPrevention: check if initiator can build in the claim ===
         if (gpInstance != null && GP_GET_DATA_STORE != null && GP_GET_CLAIM_AT != null && GP_CLAIM_ALLOW_BUILD != null) {
             try {
                 Object dataStore = GP_GET_DATA_STORE.invoke(gpInstance);
                 Object claim = GP_GET_CLAIM_AT.invoke(dataStore, pos, false, null);
                 if (claim != null) {
-                    // allowBuild returns null if allowed, or a String reason if denied
                     Object result = GP_CLAIM_ALLOW_BUILD.invoke(claim, initiator);
                     if (result != null) return false;
                 }
             } catch (Throwable ignored) {}
         }
 
-        // === Lands: check if target is in a protected area ===
         if (landsApi != null) {
             Object area = null;
             try {
@@ -849,28 +849,17 @@ public class ProtectionCompat {
             } catch (Throwable ignored) {}
 
             if (area != null && !landsWarned) {
-                // Lands area detected but we can't reliably check flags across versions.
-                // Log once so admins know it's a best-effort check.
                 DapUrHomiesMod.LOGGER.warn(
-                    "[DapUrHomies] Lands detected but detailed flag checking is not available. " +
-                    "Interactions inside Lands areas are allowed by default. " +
-                    "Consider disabling protectionCheckEnabled in config if this is unwanted."
+                    "[DapUrHomies] Lands detected but detailed flag checking is not available. "
+                    + "Interactions inside Lands areas are allowed by default."
                 );
                 landsWarned = true;
             }
         }
 
-        // === Flan: check interaction permission ===
-        if (FLAN_API_CLASS != null && FLAN_CAN_INTERACT != null) {
+        if (FLAN_CAN_INTERACT != null && flanPermission != null) {
             try {
-                Object result;
-                if (FLAN_CAN_INTERACT.getParameterCount() == 3) {
-                    // PermissionHelper.checkPermission(player, pos, permissionNode)
-                    result = FLAN_CAN_INTERACT.invoke(null, initiator, pos, "INTERACT_ENTITY");
-                } else {
-                    // ClaimHandler.canInteract(player, pos)
-                    result = FLAN_CAN_INTERACT.invoke(null, initiator, pos);
-                }
+                Object result = FLAN_CAN_INTERACT.invoke(null, initiator, pos, flanPermission);
                 if (result instanceof Boolean && !(Boolean) result) return false;
             } catch (Throwable ignored) {}
         }
@@ -879,18 +868,22 @@ public class ProtectionCompat {
     }
 
     public static boolean isAnyProtectionLoaded() {
-        return gpInstance != null || landsApi != null || FLAN_API_CLASS != null;
+        return gpInstance != null || landsApi != null || isFlanLoaded();
     }
 
-    private static String getLoadedMods() {
+    private static boolean isFlanLoaded() {
+        return FLAN_API_CLASS != null && FLAN_CAN_INTERACT != null
+                && FLAN_BREAK_PERMISSION != null && FLAN_HURT_PLAYER_PERMISSION != null;
+    }
+
+    public static String getLoadedMods() {
         StringBuilder sb = new StringBuilder();
         if (gpInstance != null) sb.append("GriefPrevention ");
         if (landsApi != null) sb.append("Lands ");
-        if (FLAN_API_CLASS != null) sb.append("Flan ");
+        if (isFlanLoaded()) sb.append("Flan ");
         return sb.toString().trim();
     }
 }
-
 
 ================================================================================
 FILE: ./main/java/com/dap/dapurhomies/config/ModConfig.java
@@ -991,7 +984,6 @@ public class ModConfig {
     }
 }
 
-
 ================================================================================
 FILE: ./main/java/com/dap/dapurhomies/DapUrHomiesMod.java
 ================================================================================
@@ -1001,6 +993,7 @@ package com.dap.dapurhomies;
 import com.dap.dapurhomies.command.DapCommands;
 import com.dap.dapurhomies.command.InteractionCommands;
 import com.dap.dapurhomies.compat.DanseCompat;
+import com.dap.dapurhomies.compat.ProtectionCompat;
 import com.dap.dapurhomies.config.ModConfig;
 import com.dap.dapurhomies.effect.MahitoStatusEffect;
 import com.dap.dapurhomies.interaction.InteractionModules;
@@ -1063,7 +1056,10 @@ public class DapUrHomiesMod implements ModInitializer {
 
         ModLifecycle.register();
 
-        LOGGER.info("[DapUrHomies] Initialized successfully! Danse integration: " + DanseCompat.isDanseLoaded());
+        LOGGER.info("[DapUrHomies] Initialized. Optional integrations: LuckPerms=" + PlayerPermissionManager.isLuckPermsActive()
+                + ", Danse=" + DanseCompat.isDanseLoaded()
+                + ", protection=" + (ProtectionCompat.isAnyProtectionLoaded() ? ProtectionCompat.getLoadedMods().trim() : "none")
+                + " (Polymer is bundled, no separate install needed)");
     }
 
     public static boolean isModEnabled() { return modEnabled; }
@@ -1076,7 +1072,6 @@ public class DapUrHomiesMod implements ModInitializer {
         });
     }
 }
-
 
 ================================================================================
 FILE: ./main/java/com/dap/dapurhomies/effect/MahitoStatusEffect.java
@@ -1105,7 +1100,6 @@ public class MahitoStatusEffect extends StatusEffect implements PolymerStatusEff
         return StatusEffects.UNLUCK.value();
     }
 }
-
 
 ================================================================================
 FILE: ./main/java/com/dap/dapurhomies/interaction/CarryingSlowdown.java
@@ -1159,7 +1153,6 @@ public class CarryingSlowdown {
         }
     }
 }
-
 
 ================================================================================
 FILE: ./main/java/com/dap/dapurhomies/interaction/DapHandler.java
@@ -1589,7 +1582,6 @@ public class DapHandler {
     }
 }
 
-
 ================================================================================
 FILE: ./main/java/com/dap/dapurhomies/interaction/DapSession.java
 ================================================================================
@@ -1805,7 +1797,6 @@ public class DapSession {
     public int getTickCount() { return tickCount; }
 }
 
-
 ================================================================================
 FILE: ./main/java/com/dap/dapurhomies/interaction/DapSessionManager.java
 ================================================================================
@@ -1893,7 +1884,6 @@ public class DapSessionManager {
         removeSessionForPlayer(playerId);
     }
 }
-
 
 ================================================================================
 FILE: ./main/java/com/dap/dapurhomies/interaction/DapVisualEffects.java
@@ -2009,7 +1999,6 @@ final class DapVisualEffects {
         }
     }
 }
-
 
 ================================================================================
 FILE: ./main/java/com/dap/dapurhomies/interaction/FallCatchHandler.java
@@ -2231,7 +2220,6 @@ public class FallCatchHandler {
         successfulCatch.remove(playerId);
     }
 }
-
 
 ================================================================================
 FILE: ./main/java/com/dap/dapurhomies/interaction/GrabYeetHandler.java
@@ -2938,7 +2926,6 @@ public class GrabYeetHandler {
     }
 }
 
-
 ================================================================================
 FILE: ./main/java/com/dap/dapurhomies/interaction/HugHandler.java
 ================================================================================
@@ -3095,7 +3082,6 @@ public class HugHandler {
         InteractionCooldowns.applyShared(p1.getUuid(), p2.getUuid(), "hug", ModConfig.get().hugCooldownMs);
     }
 }
-
 
 ================================================================================
 FILE: ./main/java/com/dap/dapurhomies/interaction/HumanShieldController.java
@@ -3266,7 +3252,6 @@ final class HumanShieldController {
     }
 }
 
-
 ================================================================================
 FILE: ./main/java/com/dap/dapurhomies/interaction/InteractionCooldowns.java
 ================================================================================
@@ -3308,7 +3293,6 @@ public final class InteractionCooldowns {
         CooldownManager.setCooldown(targetId, type, ticks);
     }
 }
-
 
 ================================================================================
 FILE: ./main/java/com/dap/dapurhomies/interaction/InteractionModules.java
@@ -3388,7 +3372,6 @@ public final class InteractionModules {
         for (Module m : MODULES) m.onPurge().run();
     }
 }
-
 
 ================================================================================
 FILE: ./main/java/com/dap/dapurhomies/interaction/InteractionRouter.java
@@ -3583,7 +3566,6 @@ public class InteractionRouter {
         return look.dotProduct(toHead) > 0.95;   // ~18° cone on head
     }
 }
-
 
 ================================================================================
 FILE: ./main/java/com/dap/dapurhomies/interaction/KickHandler.java
@@ -3941,7 +3923,6 @@ public class KickHandler {
     }
 }
 
-
 ================================================================================
 FILE: ./main/java/com/dap/dapurhomies/interaction/LaunchedPlayerTracker.java
 ================================================================================
@@ -4014,7 +3995,6 @@ public class LaunchedPlayerTracker {
     }
 }
 
-
 ================================================================================
 FILE: ./main/java/com/dap/dapurhomies/interaction/PlayerInteractionState.java
 ================================================================================
@@ -4073,7 +4053,6 @@ public final class PlayerInteractionState {
                 || isInDapSession(self.getUuid()) || isInDapSession(target.getUuid());
     }
 }
-
 
 ================================================================================
 FILE: ./main/java/com/dap/dapurhomies/interaction/PushHandler.java
@@ -4222,7 +4201,6 @@ public class PushHandler {
     }
 }
 
-
 ================================================================================
 FILE: ./main/java/com/dap/dapurhomies/interaction/SimpleInteractions.java
 ================================================================================
@@ -4358,7 +4336,6 @@ public class SimpleInteractions {
         marioJumpTicks.remove(playerId);
     }
 }
-
 
 ================================================================================
 FILE: ./main/java/com/dap/dapurhomies/interaction/ThrowTracker.java
@@ -4596,7 +4573,6 @@ final class ThrowTracker {
     }
 }
 
-
 ================================================================================
 FILE: ./main/java/com/dap/dapurhomies/item/MahitoPotionItem.java
 ================================================================================
@@ -4664,7 +4640,6 @@ public class MahitoPotionItem extends Item implements PolymerItem {
         return PolymerItemUtils.createItemStack(itemStack, tooltipType, context);
     }
 }
-
 
 ================================================================================
 FILE: ./main/java/com/dap/dapurhomies/Lang.java
@@ -5049,7 +5024,6 @@ public class Lang {
     }
 }
 
-
 ================================================================================
 FILE: ./main/java/com/dap/dapurhomies/mixin/GrabbedPlayerControlMixin.java
 ================================================================================
@@ -5079,7 +5053,6 @@ public abstract class GrabbedPlayerControlMixin {
         }
     }
 }
-
 
 ================================================================================
 FILE: ./main/java/com/dap/dapurhomies/mixin/ServerPlayNetworkHandlerMixin.java
@@ -5115,7 +5088,6 @@ public class ServerPlayNetworkHandlerMixin {
         ci.cancel();
     }
 }
-
 
 ================================================================================
 FILE: ./main/java/com/dap/dapurhomies/ModLifecycle.java
@@ -5252,7 +5224,6 @@ public class ModLifecycle {
     }
 }
 
-
 ================================================================================
 FILE: ./main/java/com/dap/dapurhomies/permission/FilePermissionProvider.java
 ================================================================================
@@ -5375,7 +5346,6 @@ public class FilePermissionProvider implements PermissionProvider {
     }
 }
 
-
 ================================================================================
 FILE: ./main/java/com/dap/dapurhomies/permission/LuckPermsPermissionProvider.java
 ================================================================================
@@ -5400,12 +5370,21 @@ import java.lang.reflect.Method;
 public class LuckPermsPermissionProvider implements PermissionProvider {
     private final FilePermissionProvider fallback = new FilePermissionProvider();
     private Method checkMethod;
+    private boolean checkByEntity;
     private boolean available = false;
 
     public LuckPermsPermissionProvider() {
         try {
             Class<?> permissionsClass = Class.forName("me.lucko.fabric.api.permissions.v0.Permissions");
-            checkMethod = permissionsClass.getMethod("check", net.minecraft.server.command.ServerCommandSource.class, String.class, boolean.class);
+            try {
+                // 当前 Fabric Permissions API 直接接受 Entity，避免命令源接口在不同映射下名称不同。
+                checkMethod = permissionsClass.getMethod("check", net.minecraft.entity.Entity.class, String.class, boolean.class);
+                checkByEntity = true;
+            } catch (NoSuchMethodException ignored) {
+                // 兼容旧版 API。
+                checkMethod = permissionsClass.getMethod("check", net.minecraft.server.command.ServerCommandSource.class, String.class, boolean.class);
+                checkByEntity = false;
+            }
             available = true;
         } catch (Exception e) {
             available = false;
@@ -5420,7 +5399,8 @@ public class LuckPermsPermissionProvider implements PermissionProvider {
     public boolean hasPermission(ServerPlayerEntity player, String node) {
         if (!available) return fallback.hasPermission(player, node);
         try {
-            return (boolean) checkMethod.invoke(null, player.getCommandSource(), node, fallback.hasPermission(player, node));
+            Object source = checkByEntity ? player : player.getCommandSource();
+            return (boolean) checkMethod.invoke(null, source, node, fallback.hasPermission(player, node));
         } catch (Exception e) {
             return fallback.hasPermission(player, node);
         }
@@ -5476,7 +5456,6 @@ public class LuckPermsPermissionProvider implements PermissionProvider {
     }
 }
 
-
 ================================================================================
 FILE: ./main/java/com/dap/dapurhomies/permission/PermissionProvider.java
 ================================================================================
@@ -5518,7 +5497,6 @@ public interface PermissionProvider {
     PlayerPreferences getPerms(UUID playerId);
 }
 
-
 ================================================================================
 FILE: ./main/java/com/dap/dapurhomies/permission/PlayerPermissionManager.java
 ================================================================================
@@ -5540,6 +5518,11 @@ public class PlayerPermissionManager {
     public static void init() {
         LuckPermsPermissionProvider lp = new LuckPermsPermissionProvider();
         provider = lp.isAvailable() ? lp : new FilePermissionProvider();
+    }
+
+    /** True when LuckPerms (Fabric Permissions API) is backing permission checks. */
+    public static boolean isLuckPermsActive() {
+        return provider instanceof LuckPermsPermissionProvider;
     }
 
     public static boolean hasPermission(ServerPlayerEntity player, String node) {
@@ -5596,7 +5579,6 @@ public class PlayerPermissionManager {
     }
 }
 
-
 ================================================================================
 FILE: ./main/java/com/dap/dapurhomies/permission/PlayerPreferences.java
 ================================================================================
@@ -5645,7 +5627,6 @@ public class PlayerPreferences {
         }
     }
 }
-
 
 ================================================================================
 FILE: ./main/java/com/dap/dapurhomies/util/AdminManager.java
@@ -5815,7 +5796,6 @@ public class AdminManager {
     }
 }
 
-
 ================================================================================
 FILE: ./main/java/com/dap/dapurhomies/util/ClapLooper.java
 ================================================================================
@@ -5894,7 +5874,6 @@ public class ClapLooper {
     }
 }
 
-
 ================================================================================
 FILE: ./main/java/com/dap/dapurhomies/util/CooldownManager.java
 ================================================================================
@@ -5957,7 +5936,6 @@ public class CooldownManager {
     }
 }
 
-
 ================================================================================
 FILE: ./main/java/com/dap/dapurhomies/util/TickClock.java
 ================================================================================
@@ -5987,5 +5965,3 @@ public class TickClock {
         return (ms + 49) / 50;
     }
 }
-
-
