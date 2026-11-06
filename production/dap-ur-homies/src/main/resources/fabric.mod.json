@@ -1,0 +1,31 @@
+{
+  "schemaVersion": 1,
+  "id": "dap-ur-homies",
+  "version": "${version}",
+  "name": "Dap Ur Homies (Server-Side)",
+  "description": "Pure server-side player interaction mod. No client mod required! Optional Danse animation integration.",
+  "authors": ["DAP Team"],
+  "contact": {},
+  "license": "MIT",
+  "icon": "assets/dap-ur-homies/icon.png",
+  "environment": "*",
+  "accessWidener": "dap-ur-homies.accesswidener",
+  "entrypoints": {
+    "main": [
+      "com.dap.dapurhomies.DapUrHomiesMod"
+    ]
+  },
+  "depends": {
+    "fabricloader": ">=0.16.0",
+    "minecraft": "~1.21.11",
+    "java": ">=21",
+    "fabric-api": "*"
+  },
+  "suggests": {
+    "danse": "*"
+  },
+  "mixins": [
+    "dap-ur-homies.mixins.json"
+  ]
+}
+

@@ -1,0 +1,150 @@
+Dap Ur Homies v0.6.3 架构说明
+================================================================================
+
+一、总体定位
+--------------------------------------------------------------------------------
+纯服务端 Fabric 模组。所有交互由服务端事件和每 tick 的状态机驱动，客户端不需要安装。
+Polymer 只负责把模组资源（药水贴图、语言文件）下发给原版客户端。
+Danse 通过反射做可选动画兼容，不是硬依赖。
+
+二、代码分层
+--------------------------------------------------------------------------------
+com.dap.dapurhomies
+├─ DapUrHomiesMod        模组入口、配置/权限初始化、内容与事件注册
+├─ ModLifecycle          断线清理、唯一 tick、输入边沿、Mahito 驱动、全局关闭清理
+├─ Lang                  双语文本与 actionbar 输出
+├─ command/              DapCommands（/dap）与 InteractionCommands（其余命令）
+├─ config/ModConfig      Gson 配置持久化
+├─ effect/               Mahito 状态效果
+├─ item/                 Mahito 药水物品
+├─ permission/           权限提供者、权限门面与 PlayerPreferences 玩家偏好
+├─ compat/               Danse、领地保护插件反射兼容
+├─ util/                 冷却、tick 时钟、管理员封禁、鼓掌循环
+├─ mixin/                被抓玩家移动、右键物品注入
+└─ interaction/          玩法模块、路由、冷却/特效/投掷/人盾协作类
+
+三、启动流程（DapUrHomiesMod.onInitialize）
+--------------------------------------------------------------------------------
+1. ModConfig.load() + Lang.loadGlobalLanguage()
+2. PlayerPermissionManager.init()
+3. 注册 Mahito 状态效果与药水，并加入物品组
+4. InteractionModules.registerAll()
+   - 调用每个模块的 register()，只注册事件回调，不注册 tick
+5. PolymerResourcePackUtils.addModAssets(MOD_ID)
+6. 在 CommandRegistrationCallback 中分别调用：
+   - DapCommands.register(dispatcher)
+   - InteractionCommands.register(dispatcher)
+7. ModLifecycle.register() 注册断线清理与唯一的 END_SERVER_TICK
+
+四、单 tick 驱动
+--------------------------------------------------------------------------------
+全局只有一个 ServerTickEvents.END_SERVER_TICK，由 ModLifecycle 注册：
+  ModLifecycle
+    -> 保存 serverInstance，TickClock.update(server)
+    -> 若全局关闭则返回
+    -> InteractionModules.tickAll(server)
+         -> 按声明顺序调用每个模块的 tick
+    -> 遍历在线玩家：被抓者跳跃挣脱、抓取中左键上升沿、Mahito 效果抖动
+    -> 每 200 tick 调用 InteractionModules.purgeAll()
+
+约束：
+- 任何 handler 的 register() 都不允许再注册 END_SERVER_TICK。
+- /dap off 之后 tickAll 整体跳过；关闭时由 ModLifecycle.disableModAndCleanup()
+  逐玩家执行 InteractionModules.cleanupAll，再执行 GrabYeetHandler.fullCleanup()
+  与 DapSessionManager.clearAll()，避免被抓玩家卡死。
+- register() 只放一次性事件回调（UseEntity/UseItem/ALLOW_DAMAGE 等）。
+- HumanShieldController.disableShieldMode 依赖 holding 查询被抓者，
+  在 drop/yeet 路径中必须先于 holding / heldBy 的移除执行，调用顺序不能调整。
+
+五、模块与职责
+--------------------------------------------------------------------------------
+InteractionRouter      右键/左键入口路由，无 tick
+DapHandler             普通/蓄力碰拳、完美击拳、击掌流程
+DapVisualEffects       击掌分级粒子、音效与完美击拳冲击波（从 DapHandler 拆出）
+DapSessionManager      碰拳会话状态机
+InteractionCooldowns   冷却检查/提示/覆盖解析；共享与各自冷却保留原有语义
+GrabYeetHandler        抓取、蓄力、放下、携带、逃脱及投掷主流程
+ThrowTracker           延迟速度、飞行/撞墙/落地追踪与投掷免疫
+HumanShieldController  人盾 ArmorStand、切换冷却、伤害转移与清理
+HugHandler             拥抱状态与增益
+KickHandler            普通踢、飞踢蓄力、减速
+PushHandler            推搡、免疫、天花板检测
+FallCatchHandler       坠落接人
+CarryingSlowdown       携带者减速
+LaunchedPlayerTracker  被击飞玩家追踪
+SimpleInteractions     拍巴掌、鼓掌、马里奥跳
+ClapLooper             鼓掌节奏循环
+AdminManager           临时封禁、冷却覆盖、强制关闭（JSON 持久化）
+CooldownManager        冷却存储与过期清理
+
+冷却语义不能混：
+- applyShared() 用发起者的覆盖结果，给击掌双方设置同样的时长。
+- 普通/蓄力碰拳这类各自冷却的路径逐方调用 apply()，各自解析覆盖值。
+
+六、事件入口
+--------------------------------------------------------------------------------
+- UseEntityCallback：空手右键玩家 -> InteractionRouter
+- AttackEntityCallback：左键玩家 -> 抓取 / 投掷 / 放下的路由
+- UseItemCallback：抓取中右键 -> 蓄力（潜行时交给盾牌逻辑）
+- ServerLivingEntityEvents.ALLOW_DAMAGE：
+  - FallCatchHandler 取消摔落伤害
+  - HumanShieldController 把人盾持有者的伤害转移给被抓者
+- ServerPlayConnectionEvents.DISCONNECT：ModLifecycle 清理全部状态
+- ServerPlayNetworkHandlerMixin：右键物品时的人盾切换
+- GrabbedPlayerControlMixin：通过 GrabYeetHandler.isHeld 抑制被抓玩家的移动输入
+
+七、关键状态与并发
+--------------------------------------------------------------------------------
+- holding / heldBy 使用 ConcurrentHashMap：
+  集成服务器下 Mixin 会读取抓取状态，避免 HashMap 数据竞争。
+- 移动抑制直接查询 heldBy，没有额外的姿态状态表。
+- 其余状态只在服务端线程读写。
+- 传送统一使用 ServerPlayNetworkHandler#requestTeleport，
+  并在服务端同步 refreshPositionAndAngles，避免服务端坐标滞后。
+- 跨世界时立即 cleanup，避免把玩家传到错误的维度。
+- 人盾模式用 ArmorStand 作中间载具，cleanup 时无条件 discard，防止实体泄漏。
+
+八、权限模型
+--------------------------------------------------------------------------------
+PlayerPermissionManager（门面）
+  -> PermissionProvider
+       ├─ FilePermissionProvider（默认，config/dap-ur-homies-perms.json）
+       └─ LuckPermsPermissionProvider（存在 LuckPerms 时）
+PlayerPreferences
+  - enabled / dap / grab / push / kick / hug / slap / clap / danse / lang
+  - allows(type) 与 set(type, value) 共用同一份模块映射
+  - enabled 是总开关，优先级最高；FilePermissionProvider 按 UUID 读写 JSON
+- canInitiate(player, type)：是否允许发起；先查管理员强制关闭，再查临时封禁
+- canReceive(player, type)：是否允许被交互；受 luckPermsControlsReceive 影响
+- hasPermission(player, "dap-ur-homies.admin")：OP level >= 2 或 LuckPerms 节点
+- bypassesCooldown(player)：管理员 + adminBypassCooldown 配置
+- 管理员强制关闭（/dap off <player>）优先于管理员绕过，玩家无法自行 /dap on 恢复
+
+九、配置与持久化
+--------------------------------------------------------------------------------
+- config/dap-ur-homies.json：所有模块开关、距离、冷却、语言、兼容开关
+- config/dap-ur-homies-perms.json：按 UUID 保存 PlayerPreferences 开关与语言
+- config/dap-ur-homies-admin.json：封禁（墙钟到期时间）、全局/玩家冷却覆盖、强制关闭名单
+- 读取配置和权限时捕获 IOException 与 RuntimeException，
+  单个非法 UUID 或损坏的 JSON 不会导致服务器启动失败。
+
+十、构建链
+--------------------------------------------------------------------------------
+- Gradle 9.5.0（wrapper 指向腾讯云镜像）
+- Fabric Loom 1.17.21（要求 Gradle 9.x）
+- Java 21，release=21，UTF-8
+- 依赖：Minecraft 1.21.11 / Yarn 1.21.11+build.6 /
+        Loader 0.16.14 / Fabric API 0.141.6+1.21.11 /
+        Polymer 0.15.2+1.21.11（5 个模块 include）
+- 产物：
+    build/libs/dap-ur-homies-0.6.3.jar
+    build/libs/dap-ur-homies-0.6.3-sources.jar
+
+十一、构建命令（Windows）
+--------------------------------------------------------------------------------
+  cd production\dap-ur-homies
+  gradlew.bat clean build test --no-daemon --console=plain
+
+JAVA_HOME 没指向 JDK 21 时先设置：
+  $env:JAVA_HOME = "<JDK21 路径>"
+  $env:Path = "$env:JAVA_HOME\bin;$env:Path"

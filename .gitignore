@@ -1,0 +1,40 @@
+# Gradle 构建产物与缓存
+production/dap-ur-homies/.gradle/
+production/dap-ur-homies/build/
+.gradle/
+build/
+out/
+classes/
+
+# 运行目录与日志
+run/
+logs/
+*.log
+hs_err_*.log
+replay_*.log
+*.hprof
+*.jfr
+
+# IDE / 编辑器
+.idea/
+*.iml
+*.ipr
+*.iws
+.vscode/
+.settings/
+.classpath
+.project
+bin/
+
+# 操作系统
+Thumbs.db
+.DS_Store
+.screenshots/
+
+# 上游参考项目与本地研究资料，不随仓库发布
+reference/
+docs/
+
+# 历史版本备份与截图
+backup/
+.trae/

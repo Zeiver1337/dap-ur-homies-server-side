@@ -1,0 +1,132 @@
+Dap Ur Homies v0.6.3 使用说明
+================================================================================
+
+一、环境要求
+--------------------------------------------------------------------------------
+- Minecraft Java Edition 1.21.11
+- Fabric Loader 0.16.14 或更高
+- Fabric API 0.141.6+1.21.11（必须）
+- Java 21
+- 纯服务端模组：客户端不需要安装
+- Polymer 0.15.2+1.21.11 已内嵌在 jar 里，不用单独装
+- Danse 是可选软依赖，只用于服务端动画兼容
+
+二、安装步骤
+--------------------------------------------------------------------------------
+1. 在服务端安装 Fabric Loader 0.16.14+ 与 Fabric API。
+2. 将 dap-ur-homies-0.6.3.jar 放入服务端 mods/ 目录。
+3. 启动服务器。第一次启动会生成：
+   - config/dap-ur-homies.json         主配置
+   - config/dap-ur-homies-perms.json   玩家权限与语言
+   - config/dap-ur-homies-admin.json   封禁、冷却覆盖、管理员强制关闭（重启保留）
+4. 客户端直接进服，不用装模组。
+5. 客户端看不到 Mahito 药水贴图时，可以手动加载 dap-ur-homies-resourcepack.zip，
+   或者让服务器开启 Polymer 自动资源包下发。
+
+三、交互操作
+--------------------------------------------------------------------------------
+碰拳 Dap
+  - 空手右键玩家：普通碰拳
+  - 潜行 + 空手右键玩家：蓄力碰拳（松开潜行释放）
+  - 双方在短时间内互相碰拳：击掌 / 完美击拳
+
+抓取与投掷
+  - 潜行 + 左键玩家：抓取
+  - 抓取后右键：开始蓄力（屏幕 BossBar 显示蓄力）
+  - 蓄力后左键：投掷
+  - 未蓄力左键：放下
+  - 抓取后潜行 + 右键：切换人肉盾牌模式
+  - 被抓者按跳跃键：尝试挣脱（20% 成功率，每次起跳判定一次）
+
+推搡
+  - 疾跑 + 右键玩家：推搡（带天花板检测与击退）
+
+踢击
+  - 看玩家脚部 + 右键：普通踢
+  - 潜行 + 看玩家脚部 + 右键第一次：开始飞踢蓄力
+  - 3 秒内再次潜行 + 看脚部 + 右键：释放飞踢
+  - 超过 3 秒会自动释放
+
+拥抱
+  - 双方都潜行，互相瞄准对方头部，并在 10 tick（0.5 秒）内各右键一次
+  - 对方没响应时，第一次点击不会吞掉操作，可以继续蓄力碰拳
+  - 拥抱期间双方获得生命恢复与抗性提升
+
+拍巴掌
+  - 从目标背后右键：拍巴掌
+
+鼓掌 / 马里奥跳
+  - /clap        鼓掌音效
+  - /mariojump   马里奥式跳跃
+
+接住坠落玩家
+  - /catchready  进入接人准备状态
+  - 附近有玩家坠落时可以接住，并免除摔落伤害
+
+Mahito 药水
+  - 饮用后获得 Mahito 状态效果，期间会不受控地随机抖动、弹跳
+  - 酿造配方见数据包 recipe/mahito_potion.json
+
+四、命令
+--------------------------------------------------------------------------------
+/daphelp                         查看帮助
+/dap status [玩家]               查看开关、权限、冷却状态
+/dap on|off                      开关自己（被管理员强制关闭时 /dap on 无效）
+/dap on|off <玩家>               开关其他玩家（需要管理员；off 为强制关闭，玩家无法自行恢复）
+/dap <类型> on|off [玩家]        开关指定模块（指定他人需要管理员）
+                                 类型：dap, grab, push, kick, hug, slap, clap, danse
+/dap ban <玩家> <类型> <分钟>    临时封禁某玩家使用某交互（需要管理员，类型可用 all）
+/dap unban <玩家> <类型>         解除封禁（需要管理员）
+/dap cooldown ms <类型> <毫秒>   设置冷却，单位毫秒（需要管理员）
+/dap cooldown set <类型> <秒> [玩家]
+                                 设置冷却，单位秒（需要管理员）
+/dap admincooldown on|off        管理员是否无视冷却（需要管理员）
+/dap sound <tick>                设置击掌音效时长（需要管理员）
+/dap chargedmode <0|1>           蓄力模式：0=按住蓄力，1=循环蓄力（需要管理员）
+/daplang                         切换自己的语言
+/daplang global <en|zh>          设置全局默认语言（需要管理员）
+/clap                            鼓掌
+/mariojump                       马里奥跳
+/catchready                      接人准备
+/grab /push /kick /hug /slap     查看对应玩法提示
+
+五、权限
+--------------------------------------------------------------------------------
+- 管理员判定：原版 OP 权限等级 >= 2，或 LuckPerms 节点 dap-ur-homies.admin
+- 普通玩家可以在 config/dap-ur-homies-perms.json 里逐项开关
+- 被封禁的玩家无法发起对应交互；管理员不受封禁与冷却限制（冷却豁免可在配置里关掉）
+- 目标玩家的接收开关同样生效；管理员发起时可以绕过目标的接收限制
+- /dap off（管理员全局关闭）会立即清理所有抓取、人盾、拥抱、蓄力与会话状态，
+  避免被携带的玩家因为 tick 停止而永久无法移动
+- 封禁、冷却覆盖与管理员强制关闭写入 config/dap-ur-homies-admin.json，重启后仍然有效
+
+六、配置说明（config/dap-ur-homies.json）
+--------------------------------------------------------------------------------
+- enableDap / enableHighFive / enableGrabYeet / enablePush / enableKick
+- enableHug / enableSlap / enableClap：模块总开关
+- dapRange / highFiveRange / grabRange / pushRange / kickRange / hugRange / slapRange
+- dapCooldownMs / highFiveCooldownMs / grabCooldownMs / pushCooldownMs
+- kickCooldownMs / hugCooldownMs / slapCooldownMs
+- luckPermsControlsReceive：LuckPerms 是否也控制“被交互”
+- adminBypassCooldown：管理员是否无视冷却
+- protectionCheckEnabled：是否检查领地/保护插件
+- highFiveSoundTicks / clapIntervalTicks：击掌音效时长与间隔
+- chargedDapMode：0=按住蓄力，1=循环蓄力
+- globalLang：全局默认语言（en / zh）
+
+七、已知限制
+--------------------------------------------------------------------------------
+1. 纯服务端实现，读不到客户端自定义按键。
+   旋转、鞘翅加速、空中操控这类依赖按键的功能没有接入交互入口。
+2. 只声明兼容 Minecraft 1.21.11（fabric.mod.json: "minecraft": "~1.21.11"）。
+   1.21.1 ~ 1.21.10 不保证能跑。
+3. 服务端与客户端都要装 Fabric API，客户端不需要装本模组。
+4. 服务端装了领地或保护插件时，建议保持 protectionCheckEnabled=true。
+
+八、0.6.3 与 0.6.2 的差异
+--------------------------------------------------------------------------------
+这一版只调整了内部结构，命令、配置、玩法和数据文件都没有变，直接替换 jar 即可。
+主要改动是把入口类的生命周期逻辑拆到 ModLifecycle，命令拆成两个类，
+玩家偏好改由 PlayerPreferences 描述，冷却公共流程收进 InteractionCooldowns，
+并从大型处理器里分出 DapVisualEffects、ThrowTracker 和 HumanShieldController。
+详细条目见 更新日志.txt 的 v0.6.3 一节。
