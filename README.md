@@ -108,6 +108,17 @@ gradlew.bat clean build test --no-daemon --console=plain
 
 MIT，保留上游 Anteryo 的版权声明，全文见 [LICENSE](LICENSE)。
 
+## 更新日志
+
+每个版本一个文件，最新版包含之前所有版本的累计记录：
+
+- [v0.6.3](changelog/v0.6.3.txt)（最新，含联动修复）
+- [v0.6.2](changelog/v0.6.2.txt)
+- [v0.6.1](changelog/v0.6.1.txt)
+- [v0.6.0](changelog/v0.6.0.txt)
+- [v0.5.1](changelog/v0.5.1.txt)
+- [v0.4.6](changelog/v0.4.6.txt)
+
 ## English
 
 A server-side Fabric mod for Minecraft 1.21.11 that adds player-to-player interactions: dap, perfect dap, high five, hug, grab & throw, human shield, drop kick, push, Mario jump and the Mahito potion. Only the server needs it — vanilla clients can join and play.
