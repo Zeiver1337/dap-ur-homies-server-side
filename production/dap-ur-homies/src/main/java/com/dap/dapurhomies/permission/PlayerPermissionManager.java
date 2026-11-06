@@ -17,6 +17,11 @@ public class PlayerPermissionManager {
         provider = lp.isAvailable() ? lp : new FilePermissionProvider();
     }
 
+    /** True when LuckPerms (Fabric Permissions API) is backing permission checks. */
+    public static boolean isLuckPermsActive() {
+        return provider instanceof LuckPermsPermissionProvider;
+    }
+
     public static boolean hasPermission(ServerPlayerEntity player, String node) {
         return provider.hasPermission(player, node);
     }
