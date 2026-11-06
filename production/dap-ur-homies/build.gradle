@@ -34,6 +34,10 @@ dependencies {
     modImplementation include("eu.pb4:polymer-autohost:${project.polymer_version}")
     modImplementation include("eu.pb4:polymer-networking:${project.polymer_version}")
 
+    // Optional integrations (LuckPerms, Danse, GriefPrevention/Lands/Flan) are soft
+    // dependencies: they are reached through reflection only and are declared in
+    // fabric.mod.json "suggests", so they must NOT be added as compile dependencies.
+
     testImplementation platform('org.junit:junit-bom:5.11.4')
     testImplementation 'org.junit.jupiter:junit-jupiter'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
