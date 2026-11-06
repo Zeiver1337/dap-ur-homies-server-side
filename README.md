@@ -68,6 +68,17 @@ Mahito 药水贴图不显示的话，客户端手动加载 `release/dap-ur-homie
 
 安装、配置和命令的完整说明见 [使用说明](release/使用说明-v0.6.3.txt)，代码结构见 [架构说明](release/架构说明-v0.6.3.txt)，历次改动见 [更新日志](release/更新日志.txt)。
 
+## 扩展与兼容
+
+下面这些插件/模组都是可选的，装着就生效，不装也不影响开服：
+
+- **LuckPerms**：接入后由它决定权限，管理员节点 `dap-ur-homies.admin`；`luckPermsControlsReceive` 打开时，LuckPerms 也会控制“能不能被别人交互”。
+- **Danse**：通过反射调用 `GestureController`，给交互加服务端动画，是 `fabric.mod.json` 里 `suggests` 的可选依赖。
+- **领地保护**：检测 GriefPrevention、Lands、Flan，交互和投掷撞墙前先查发起者在目标位置有没有权限。Lands 只做基础区域检测，读不到详细 flag。
+- **Polymer**：已经打进 jar，负责把模组资源下发给原版客户端，不用单独安装。
+
+相关开关在配置里：`protectionCheckEnabled` 控制保护检查，`adminBypassCooldown` 控制管理员冷却豁免，`luckPermsControlsReceive` 控制 LuckPerms 是否管“被交互”。
+
 ## 仓库结构
 
 ```
@@ -96,3 +107,52 @@ gradlew.bat clean build test --no-daemon --console=plain
 ## 授权
 
 MIT，保留上游 Anteryo 的版权声明，全文见 [LICENSE](LICENSE)。
+
+## English
+
+A server-side Fabric mod for Minecraft 1.21.11 that adds player-to-player interactions: dap, perfect dap, high five, hug, grab & throw, human shield, drop kick, push, Mario jump and the Mahito potion. Only the server needs it — vanilla clients can join and play.
+
+This is an unofficial server-side port of [Anteryo/Dap-ur-homie](https://github.com/Anteryo/Dap-ur-homie) (MIT), not affiliated with or endorsed by the original author.
+
+**Requirements**: Minecraft Java 1.21.11, Fabric Loader 0.16.14+, Fabric API 0.141.6+1.21.11, Java 21. Only 1.21.11 is declared in `fabric.mod.json`.
+
+**Install**: put `dap-ur-homies-0.6.3.jar` into the server `mods/` folder and start the server. Three config files are created under `config/`.
+
+**Controls**
+
+| Action | Input |
+|---|---|
+| Dap | right-click a player with an empty hand |
+| Charged dap | sneak + right-click, release by standing up |
+| High five / perfect dap | both players dap each other in quick succession |
+| Grab | sneak + left-click a player |
+| Throw | right-click to charge, then left-click |
+| Drop | left-click while not charged |
+| Human shield | sneak + right-click while carrying someone |
+| Escape | jump while grabbed (20% per attempt) |
+| Push | sprint + right-click |
+| Kick | look at the feet + right-click |
+| Drop kick | sneak + look at feet + right-click twice within 3 seconds |
+| Hug | both players sneak, look at each other's head, right-click within 0.5 s |
+| Slap | right-click from behind |
+| Catch | `/catchready`, then catch a falling player |
+
+**Commands**: `/daphelp`, `/dap status|on|off`, `/dap <type> on|off`, `/dap ban|unban`, `/dap cooldown ms|set`, `/dap admincooldown`, `/dap sound`, `/dap chargedmode`, `/daplang`, `/clap`, `/mariojump`, `/catchready`. Admin commands need OP level 2+ or the LuckPerms node `dap-ur-homies.admin`.
+
+**Optional integrations**
+
+- LuckPerms — permission source, and optionally controls who can receive interactions.
+- Danse — server-side animations through reflection; listed in `suggests`.
+- GriefPrevention / Lands / Flan — protection checks before interactions and before throws break blocks.
+- Polymer — bundled in the jar, delivers the mod's assets to vanilla clients.
+
+**Build** (JDK 21):
+
+```powershell
+cd production\dap-ur-homies
+gradlew.bat clean build test --no-daemon --console=plain
+```
+
+**Limitations**: server-side only, so client keybinds such as spin, elytra boost and air control are not wired up.
+
+**License**: MIT, original copyright by Anteryo. See [LICENSE](LICENSE).
