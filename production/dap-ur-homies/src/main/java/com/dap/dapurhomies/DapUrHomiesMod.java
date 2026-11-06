@@ -3,6 +3,7 @@ package com.dap.dapurhomies;
 import com.dap.dapurhomies.command.DapCommands;
 import com.dap.dapurhomies.command.InteractionCommands;
 import com.dap.dapurhomies.compat.DanseCompat;
+import com.dap.dapurhomies.compat.ProtectionCompat;
 import com.dap.dapurhomies.config.ModConfig;
 import com.dap.dapurhomies.effect.MahitoStatusEffect;
 import com.dap.dapurhomies.interaction.InteractionModules;
@@ -65,7 +66,10 @@ public class DapUrHomiesMod implements ModInitializer {
 
         ModLifecycle.register();
 
-        LOGGER.info("[DapUrHomies] Initialized successfully! Danse integration: " + DanseCompat.isDanseLoaded());
+        LOGGER.info("[DapUrHomies] Initialized. Optional integrations: LuckPerms=" + PlayerPermissionManager.isLuckPermsActive()
+                + ", Danse=" + DanseCompat.isDanseLoaded()
+                + ", protection=" + (ProtectionCompat.isAnyProtectionLoaded() ? ProtectionCompat.getLoadedMods().trim() : "none")
+                + " (Polymer is bundled, no separate install needed)");
     }
 
     public static boolean isModEnabled() { return modEnabled; }
