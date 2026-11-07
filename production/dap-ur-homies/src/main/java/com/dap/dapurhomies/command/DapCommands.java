@@ -5,8 +5,10 @@ import com.dap.dapurhomies.Lang;
 import com.dap.dapurhomies.ModLifecycle;
 import com.dap.dapurhomies.config.ModConfig;
 import com.dap.dapurhomies.permission.PlayerPermissionManager;
+import com.dap.dapurhomies.update.UpdateChecker;
 import com.mojang.brigadier.CommandDispatcher;
 import net.minecraft.command.argument.EntityArgumentType;
+import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.command.CommandManager;
 import net.minecraft.server.command.ServerCommandSource;
 import net.minecraft.server.network.ServerPlayerEntity;
@@ -292,6 +294,50 @@ public class DapCommands {
                     return 1;
                 })));
 
+        // /dap update [check|download]
+        dapRoot.then(CommandManager.literal("update")
+            .executes(c -> {
+                if (!requireUpdateAdmin(c.getSource())) return 0;
+                reply(c.getSource(), UpdateChecker.describe());
+                return 1;
+            })
+            .then(CommandManager.literal("check")
+                .executes(c -> {
+                    ServerCommandSource source = c.getSource();
+                    if (!requireUpdateAdmin(source)) return 0;
+                    reply(source, "正在检查更新…");
+                    MinecraftServer server = source.getServer();
+                    UpdateChecker.checkAsync().whenComplete((status, error) -> server.execute(() -> {
+                        if (error != null) {
+                            reply(source, "检查失败：" + error.getMessage());
+                            return;
+                        }
+                        if (!status.checkOk()) {
+                            reply(source, "检查失败：" + status.message());
+                            return;
+                        }
+                        reply(source, status.updateAvailable()
+                                ? "当前 " + status.current() + "，最新 " + status.latest() + "，可执行 /dap update download"
+                                : status.message());
+                    }));
+                    return 1;
+                }))
+            .then(CommandManager.literal("download")
+                .executes(c -> {
+                    ServerCommandSource source = c.getSource();
+                    if (!requireUpdateAdmin(source)) return 0;
+                    reply(source, "开始下载更新…");
+                    MinecraftServer server = source.getServer();
+                    UpdateChecker.downloadAsync().whenComplete((status, error) -> server.execute(() -> {
+                        if (error != null) {
+                            reply(source, "下载失败：" + error.getMessage());
+                            return;
+                        }
+                        reply(source, status.message());
+                    }));
+                    return 1;
+                })));
+
         // Default /dap
         dapRoot.executes(c -> {
             c.getSource().sendFeedback(() -> Lang.t(
@@ -302,6 +348,18 @@ public class DapCommands {
         });
 
         dispatcher.register(dapRoot);
+    }
+
+    private static boolean requireUpdateAdmin(ServerCommandSource source) {
+        ServerPlayerEntity player = source.getPlayer();
+        if (player == null) return true; // 控制台
+        if (PlayerPermissionManager.hasPermission(player, "dap-ur-homies.admin")) return true;
+        Lang.noPermission(player);
+        return false;
+    }
+
+    private static void reply(ServerCommandSource source, String message) {
+        source.sendFeedback(() -> Text.literal(message), false);
     }
 
     private static int toggleType(ServerPlayerEntity sender, String type, boolean value, ServerPlayerEntity target) {
