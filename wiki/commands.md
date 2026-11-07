@@ -38,6 +38,9 @@
 | `/dap sound <tick>` | 击掌音效时长，单位 tick |
 | `/dap chargedmode <0\|1>` | 蓄力模式：0 按住蓄力，1 循环蓄力 |
 | `/dap reload` | 重新读取配置文件 |
+| `/dap update` | 查看当前版本、最新版本和待应用的下载 |
+| `/dap update check` | 立即检查 GitHub 上的最新版本 |
+| `/dap update download` | 下载最新版并尝试替换，重启后生效 |
 | `/daplang global <en\|zh>` | 设置服务器默认语言 |
 
 ## 几个容易混的点
@@ -47,3 +50,18 @@
 `/dap ban` 的 `<类型>` 只认上面列出的类型名，写 `all` 表示全部。封禁记录写在 `config/dap-ur-homies-admin.json`，重启后还在。
 
 冷却设置支持两种覆盖，优先级从高到低是：单个玩家覆盖、全局覆盖、配置文件里的默认值。设置了覆盖之后，改配置文件不会盖掉覆盖值，要先用命令改回去或者删掉 `admin.json` 里的对应条目。
+
+## 更新
+
+服务器启动时会异步查一次 GitHub 的最新 release，只写日志，不自动下载。检查结果可以在 `/dap update` 里看到。
+
+`/dap update download` 把新 jar 下载到 `mods/.dap-ur-homies-update/`，校验大小和 SHA-256 后尝试替换当前 jar：
+
+- 能删掉正在运行的旧 jar（Linux 常见）时，新 jar 直接移进 `mods/`，重启即生效；
+- 删不掉（Windows 会锁住已加载的 jar）时，只保留下载文件，命令会返回完整路径，关服后手动替换即可。
+
+不会把新 jar 直接丢进 `mods/`，因为同 id 的两个 jar 同时存在会让 Fabric 拒绝启动。
+
+控制台也可以执行这三条命令，权限判断只在玩家执行时生效。
+
+想把下载这一步也交给服务端，在配置里把 `autoUpdateEnabled` 改成 `true`。默认关闭，因为自动替换会改动 `mods/` 目录，多数服主希望自己挑时间重启。
