@@ -9,6 +9,7 @@ import com.dap.dapurhomies.effect.MahitoStatusEffect;
 import com.dap.dapurhomies.interaction.InteractionModules;
 import com.dap.dapurhomies.item.MahitoPotionItem;
 import com.dap.dapurhomies.permission.PlayerPermissionManager;
+import com.dap.dapurhomies.update.UpdateChecker;
 import eu.pb4.polymer.resourcepack.api.PolymerResourcePackUtils;
 import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
@@ -65,6 +66,7 @@ public class DapUrHomiesMod implements ModInitializer {
         registerCommands();
 
         ModLifecycle.register();
+        UpdateChecker.initialize();
 
         LOGGER.info("[DapUrHomies] Initialized. Optional integrations: LuckPerms=" + PlayerPermissionManager.isLuckPermsActive()
                 + ", Danse=" + DanseCompat.isDanseLoaded()
