@@ -56,6 +56,8 @@
 | `adminBypassCooldown` | `true` | 管理员无视冷却。关掉后管理员也要等冷却 |
 | `luckPermsControlsReceive` | `false` | 是否让 LuckPerms 同时决定“能不能被别人交互” |
 | `protectionCheckEnabled` | `true` | 交互前是否检查领地保护 |
+| `updateCheckEnabled` | `true` | 启动时是否检查新版本。只检查，不会自动下载 |
+| `autoUpdateEnabled` | `false` | 检测到新版本后是否自动下载并替换。默认关闭 |
 
 `protectionCheckEnabled` 默认开着。服务器装了 GriefPrevention、Lands 或 Flan 时建议保持开启；什么都没装时这项检查会直接放行，不会产生额外开销。
 
