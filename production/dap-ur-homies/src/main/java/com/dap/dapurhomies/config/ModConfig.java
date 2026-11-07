@@ -54,6 +54,12 @@ public class ModConfig {
     // Protection: whether to check protection-mod claims before interacting
     public boolean protectionCheckEnabled = true;
 
+    // Update check on startup (download is always manual via /dap update download)
+    public boolean updateCheckEnabled = true;
+
+    // Auto download and apply the new version after a check finds one (default off)
+    public boolean autoUpdateEnabled = false;
+
     // Sound / effects
     public int highFiveSoundTicks = 40;   // 击掌音效总时长（tick），默认40=2秒，可用指令改
     public int clapIntervalTicks = 5;     // 击掌音效播放间隔
